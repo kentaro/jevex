@@ -1,8 +1,9 @@
 # Validation record
 
 Date: 2026-09-18. Local environment: Elixir 1.20.2, Erlang/OTP 29.0.4, macOS.
-CI is included but has not been run on GitHub; the Elixir 1.17/OTP 27 matrix is
-not represented here as an observed result.
+GitHub Actions runs the Elixir 1.17/OTP 27 and Elixir 1.20/OTP 29 matrix;
+[workflow results](https://github.com/kentaro/jevex/actions) record remote checks.
+The measurements below describe local validation unless stated otherwise.
 
 ## Automated checks
 

@@ -47,8 +47,8 @@ use the same expressions with different runtime configuration.
 
 Supports Elixir 1.17 through 1.20 with an OTP version supported by the selected
 Elixir release. Local verification uses Elixir 1.20.2 / OTP 29. CI is configured
-for Elixir 1.17 / OTP 27 and Elixir 1.20 / OTP 29; those remote CI jobs have not
-been run as part of this delivery.
+for Elixir 1.17 / OTP 27 and Elixir 1.20 / OTP 29. Check the
+[GitHub Actions runs](https://github.com/kentaro/jevex/actions) for the latest status.
 
 Jevex is packaged for Hex as `:jevex`. **Version 0.1.0 has not yet been published**;
 the registry dependency below is the installation form to use after publication,

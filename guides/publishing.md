@@ -46,7 +46,9 @@ mix hex.publish --dry-run --yes
 Choose a fresh scratch directory for `--output`. `mix hex.build` creates the
 standard `jevex-<version>.tar` artifact without publishing. With `--unpack`,
 the output path is a directory containing the package source. The dry run
-performs local packaging checks without releasing anything. A distribution ZIP
+performs local packaging checks without releasing anything, but Hex 2.5.1 still
+requires an authenticated maintainer session. CI uses `mix hex.build`, ExDoc, and
+unpacked-package compilation instead, without publication credentials. A distribution ZIP
 is not a substitute for this Hex artifact or a published dependency.
 
 Review the unpacked file inventory and `mix.exs`. Include the required library
