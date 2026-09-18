@@ -69,5 +69,6 @@ request/response behavior is verified with fixtures. Their authenticated inferen
 has **not** been tested with live keys. Alpha/experimental endpoints can change.
 
 The release artifact is a standard Hex package tarball, with source and English
-documentation. It has not been published to Hex or GitHub. Registry installation
+documentation. The source is available on [GitHub](https://github.com/kentaro/jevex); the package
+has not been published to Hex. Registry installation
 and hosted HexDocs are therefore not claimed as verified.

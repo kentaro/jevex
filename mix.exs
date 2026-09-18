@@ -6,6 +6,7 @@ defmodule Jevex.MixProject do
       app: :jevex,
       version: "0.1.0",
       name: "Jevex",
+      source_url: "https://github.com/kentaro/jevex",
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       description:
@@ -13,6 +14,7 @@ defmodule Jevex.MixProject do
       deps: deps(),
       docs: [
         main: "readme",
+        source_ref: "main",
         extras: [
           "README.md",
           "guides/syntax.md",
@@ -29,7 +31,10 @@ defmodule Jevex.MixProject do
         name: "jevex",
         build_tools: ["mix"],
         licenses: ["MIT"],
-        links: %{"Jev API specification" => "https://docs.typesafe.ai/api"},
+        links: %{
+          "GitHub" => "https://github.com/kentaro/jevex",
+          "Jev API specification" => "https://docs.typesafe.ai/api"
+        },
         files:
           ~w(lib .formatter.exs mix.exs README.md LICENSE CHANGELOG.md VALIDATION.md guides examples)
       ],
