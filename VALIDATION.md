@@ -71,5 +71,13 @@ has **not** been tested with live keys. Alpha/experimental endpoints can change.
 
 The release artifact is a standard Hex package tarball, with source and English
 documentation. The source is available on [GitHub](https://github.com/kentaro/jevex).
-The checks above describe pre-release validation; registry installation and hosted
-documentation are verified separately after publication.
+
+## Published release verification
+
+Version 0.1.0 was published to [Hex](https://hex.pm/packages/jevex/0.1.0) on
+2026-09-18. The registry reports documentation available, and the hosted
+[Jevex module documentation](https://hexdocs.pm/jevex/0.1.0/Jevex.html) returns HTTP 200.
+A separate consumer resolved `{:jevex, "~> 0.1.0"}` from Hex, compiled with warnings
+as errors, and passed all article examples using fixture responses (12 parsed
+blocks and 7 compiled modules). This verifies registry installation independently
+of the maintainer checkout.

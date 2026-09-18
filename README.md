@@ -52,6 +52,8 @@ for Elixir 1.17 / OTP 27 and Elixir 1.20 / OTP 29. Check the
 
 Add the `:jevex` Hex package to your dependencies:
 
+[Hex package](https://hex.pm/packages/jevex) · [API documentation](https://hexdocs.pm/jevex/0.1.0/)
+
 ```elixir
 defp deps do
   [{:jevex, "~> 0.1.0"}]
