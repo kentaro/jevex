@@ -261,7 +261,11 @@ defmodule Jevex.Client do
          headers: 1,
          decode: 1,
          partial_metadata?: 0
-       ), do: {:ok, module}, else: invalid("unknown backend or missing Jevex.Backend callbacks")
+       ) do
+      {:ok, module}
+    else
+      invalid("unknown backend or missing Jevex.Backend callbacks")
+    end
   end
 
   defp default_key(backend) do
