@@ -4,11 +4,8 @@ Jevex is an Elixir client for Jev probabilistic evaluations, with an optional
 macro DSL for reusable, typed schemas. It keeps HTTP requests, backend protocols,
 response validation, and schema syntax separate.
 
-It includes adapters for the official TypeSafe API, ロリポップ！AIゲートウェイ,
-OpenRouter, Cloudflare Workers AI, Vercel AI Gateway, and custom native endpoints.
-These use each service's evaluation protocol; they are not generic Chat
-Completions adapters. See the [backend guide](guides/backends.md) for endpoint,
-model, authentication, and protocol limitations.
+Start with the official Jev API from TypeSafe. The same schemas also work through
+AI routers by changing the client configuration; see [Routers](#routers).
 
 ## Installation
 
@@ -26,7 +23,7 @@ end
 
 Adjust the path to the actual checkout, then run `mix deps.get`.
 
-## Quick start
+## Quick start: official Jev API
 
 Declare questions in a module. Schema declarations contain no credentials or
 backend settings, so the same schema works with different clients.
@@ -50,10 +47,11 @@ defmodule MyApp.Triage do
 end
 ```
 
-Provide `LOLIPOP_AI_GATEWAY_API_KEY` in the process environment, then evaluate:
+Provide your TypeSafe API key as `TYPESAFE_API_KEY` in the process environment,
+then evaluate against the official Jev API:
 
 ```elixir
-with {:ok, client} <- Jevex.Client.new(backend: :lolipop),
+with {:ok, client} <- Jevex.Client.new(backend: :typesafe),
      {:ok, result} <- MyApp.Triage.evaluate(client, %{
        subject: "Checkout is down",
        body: "Nobody can complete a purchase."
@@ -92,34 +90,6 @@ String choices stay strings. `answer.probabilities` always retains string keys:
 `MyApp.Triage.evaluate!/2` returns the schema struct or raises `Jevex.Error`.
 `MyApp.Triage.questions/0` exposes the validated question map for direct requests.
 
-### 日本語クイックスタート
-
-質問を `use Jevex.Schema` のモジュールに宣言し、接続先は実行時に指定します。
-ロリポップ！AIゲートウェイは `backend: :lolipop` を指定し、環境変数
-`LOLIPOP_AI_GATEWAY_API_KEY` に API キーを設定してください。
-
-```elixir
-defmodule Inquiry do
-  use Jevex.Schema
-  noul :urgent, "すぐに対応が必要ですか？"
-  choice :team, "どの担当に振り分けますか？", %{
-    billing: "請求・支払い",
-    support: "技術的な問い合わせ"
-  }
-  score :severity, "影響の大きさは？", ["小さい", "大きい"]
-end
-
-client = Jevex.Client.new!(backend: :lolipop)
-# API 呼び出しが発生します。
-{:ok, result} = Inquiry.evaluate(client, "支払いが二重に請求されています")
-# result.urgent.noul は 0〜1 の確率です。
-# result.team.choice は :billing または :support です。
-```
-
-マクロの引数にはリテラルだけを指定します。動的な質問は次の低レイヤー API を
-使って組み立てます。型仕様による静的解析に加え、外部レスポンスは実行時に検証します。
-モデルの判断内容が正しいことまで保証する仕組みではありません。
-
 ## Direct API: dynamic questions and full metadata
 
 The macro layer is optional. Use constructors and the client directly when
@@ -156,6 +126,35 @@ For lower-level integration, `Jevex.HTTP.post/3` handles the request and backend
 normalization but does **not** decode typed answers. Normally use
 `Jevex.evaluate/3`, which adds `Jevex.Response` validation.
 
+## Routers
+
+Jevex also supports Lolipop AI Gateway, OpenRouter, Cloudflare Workers AI,
+and Vercel AI Gateway, as well as custom native endpoints. Switch the client;
+the schema and result types stay the same.
+
+For example, to use **Lolipop AI Gateway**, provide its key as
+`LOLIPOP_AI_GATEWAY_API_KEY` and select `backend: :lolipop`:
+
+```elixir
+client = Jevex.Client.new!(
+  backend: :lolipop,
+  api_key: {:system, "LOLIPOP_AI_GATEWAY_API_KEY"}
+)
+
+MyApp.Triage.evaluate(client, %{
+  subject: "Checkout is down",
+  body: "Nobody can complete a purchase."
+})
+```
+
+The same schema works with both the official API and the router. The client
+selects the endpoint, credentials, and wire protocol at runtime.
+
+Each adapter uses the service's dedicated evaluation protocol. See the
+[backend guide](guides/backends.md) for credentials and configuration, and
+[backend contracts](guides/backend-contracts.md) for endpoint differences and
+alpha/experimental protocol limitations.
+
 ## Fallbacks and confidence gates
 
 Evaluation options are per call. They are independent of transport retries and
@@ -163,13 +162,13 @@ work with both schemas and `Jevex.evaluate/4`:
 
 ```elixir
 primary = Jevex.Client.new!(
-  backend: :lolipop,
-  api_key: {:system, "LOLIPOP_AI_GATEWAY_API_KEY"}
+  backend: :typesafe,
+  api_key: {:system, "TYPESAFE_API_KEY"}
 )
 
 backup = Jevex.Client.new!(
-  backend: :typesafe,
-  api_key: {:system, "TYPESAFE_API_KEY"}
+  backend: :lolipop,
+  api_key: {:system, "LOLIPOP_AI_GATEWAY_API_KEY"}
 )
 
 MyApp.Triage.evaluate(primary, "Checkout is down",
@@ -221,8 +220,8 @@ Application-wide defaults can be supplied in `config/runtime.exs`:
 import Config
 
 config :jevex, :client,
-  backend: :lolipop,
-  api_key: {:system, "LOLIPOP_AI_GATEWAY_API_KEY"},
+  backend: :typesafe,
+  api_key: {:system, "TYPESAFE_API_KEY"},
   timeout: 30_000,
   connect_timeout: 5_000,
   max_retries: 2
@@ -275,7 +274,8 @@ From this project's directory:
 ```sh
 mix deps.get
 mix run examples/triage.exs          # Deterministic fixture; no API key or network
-mix run examples/triage.exs --live   # One real request to Lolipop; requires its key
+mix run examples/triage.exs --live   # Official Jev API; requires TYPESAFE_API_KEY
+mix run examples/triage.exs --live --lolipop # Router example; requires LOLIPOP_AI_GATEWAY_API_KEY
 mix test
 mix format --check-formatted
 mix compile --warnings-as-errors
@@ -285,6 +285,11 @@ mix dialyzer
 
 The offline example validates the same client, request, decoder, and schema path
 using an injected transport. It is not evidence of a successful live service call.
+
+`mix test` also runs the executable `iex>` examples in the module and function
+documentation as doctests. These examples require no API keys or network access.
+An additional check requires English documentation for every authored module,
+exported function, macro, and callback.
 
 Read the [architecture guide](guides/architecture.md), [backend guide](guides/backends.md),
 and [reliability guide](guides/reliability.md) for the full contracts.

@@ -1,9 +1,21 @@
 defmodule Jevex.Backends.Native do
-  @moduledoc false
+  @moduledoc "Shared native System One wire encoding and object-shape normalization."
+  @doc """
+  Encodes validated state and native question maps into the provider request body.
+
+      iex> Jevex.Backends.Native.encode("jev-latest", "Help", %{})
+      %{"model" => "jev-latest", "state" => "Help", "questions" => %{}}
+  """
   @spec encode(String.t(), term(), map()) :: map()
   def encode(model, state, questions),
     do: %{"model" => model, "state" => state, "questions" => questions}
 
+  @doc """
+  Normalizes a decoded provider JSON object without performing final answer validation.
+
+      iex> Jevex.Backends.Native.decode(%{"answers" => %{}})
+      {:ok, %{"answers" => %{}}}
+  """
   @spec decode(term()) :: {:ok, map()} | {:error, Jevex.Error.t()}
   def decode(body) when is_map(body), do: {:ok, body}
 
@@ -15,33 +27,65 @@ defmodule Jevex.Backends.TypeSafe do
   @moduledoc "Direct TypeSafe System One API. Uses `jev-latest` and the native question protocol."
   @behaviour Jevex.Backend
   @impl true
+  @doc """
+  Returns endpoint and model defaults; the client applies explicit overrides afterward.
+
+      iex> {:ok, defaults} = Jevex.Backends.TypeSafe.defaults([])
+      iex> defaults.model
+      "jev-latest"
+  """
   @spec defaults(keyword()) :: {:ok, Jevex.Backend.defaults()} | {:error, Jevex.Error.t()}
   def defaults(_opts),
     do: {:ok, %{endpoint: "https://api.typesafe.ai/v1/systemone", model: "jev-latest"}}
 
   @impl true
+  @doc """
+  Encodes validated state and native question maps into the provider request body.
+
+      iex> Jevex.Backends.TypeSafe.encode("jev-latest", "Help", %{})
+      %{"model" => "jev-latest", "state" => "Help", "questions" => %{}}
+  """
   @spec encode(String.t(), term(), map()) :: map()
   defdelegate encode(model, state, questions), to: Jevex.Backends.Native
   @impl true
+  @doc """
+  Returns provider protocol headers. Bearer authentication is added by the client.
+  """
   @spec headers(String.t()) :: [{String.t(), String.t()}]
   def headers(_model), do: []
   @impl true
+  @doc """
+  Normalizes a decoded provider JSON object without performing final answer validation.
+
+      iex> Jevex.Backends.TypeSafe.decode(%{"answers" => %{}})
+      {:ok, %{"answers" => %{}}}
+  """
   @spec decode(term()) :: {:ok, map()} | {:error, Jevex.Error.t()}
   defdelegate decode(body), to: Jevex.Backends.Native
   @impl true
+  @doc """
+  Whether response validation permits omitted router metadata while still validating present fields.
+  """
   @spec partial_metadata?() :: boolean()
   def partial_metadata?, do: false
 end
 
 defmodule Jevex.Backends.Lolipop do
   @moduledoc """
-  ロリポップ！AIゲートウェイ's native `/v1/systemone` API.
+  Lolipop AI Gateway's native `/v1/systemone` API.
 
   Defaults to `typesafe/jev-latest`. An explicit `model: "auto"` asks the gateway
   to choose an available probabilistic-decision model.
   """
   @behaviour Jevex.Backend
   @impl true
+  @doc """
+  Returns endpoint and model defaults; the client applies explicit overrides afterward.
+
+      iex> {:ok, defaults} = Jevex.Backends.Lolipop.defaults([])
+      iex> defaults.model
+      "typesafe/jev-latest"
+  """
   @spec defaults(keyword()) :: {:ok, Jevex.Backend.defaults()} | {:error, Jevex.Error.t()}
   def defaults(_opts),
     do:
@@ -49,15 +93,33 @@ defmodule Jevex.Backends.Lolipop do
        %{endpoint: "https://ai-gateway.lolipop.jp/v1/systemone", model: "typesafe/jev-latest"}}
 
   @impl true
+  @doc """
+  Encodes validated state and native question maps into the provider request body.
+
+      iex> Jevex.Backends.Lolipop.encode("jev-latest", "Help", %{})
+      %{"model" => "jev-latest", "state" => "Help", "questions" => %{}}
+  """
   @spec encode(String.t(), term(), map()) :: map()
   defdelegate encode(model, state, questions), to: Jevex.Backends.Native
   @impl true
+  @doc """
+  Returns provider protocol headers. Bearer authentication is added by the client.
+  """
   @spec headers(String.t()) :: [{String.t(), String.t()}]
   def headers(_model), do: []
   @impl true
+  @doc """
+  Normalizes a decoded provider JSON object without performing final answer validation.
+
+      iex> Jevex.Backends.Lolipop.decode(%{"answers" => %{}})
+      {:ok, %{"answers" => %{}}}
+  """
   @spec decode(term()) :: {:ok, map()} | {:error, Jevex.Error.t()}
   defdelegate decode(body), to: Jevex.Backends.Native
   @impl true
+  @doc """
+  Whether response validation permits omitted router metadata while still validating present fields.
+  """
   @spec partial_metadata?() :: boolean()
   def partial_metadata?, do: false
 end
@@ -71,21 +133,46 @@ defmodule Jevex.Backends.OpenRouter do
   """
   @behaviour Jevex.Backend
   @impl true
+  @doc """
+  Returns endpoint and model defaults; the client applies explicit overrides afterward.
+
+      iex> {:ok, defaults} = Jevex.Backends.OpenRouter.defaults([])
+      iex> defaults.model
+      "typesafe/jev-1.13"
+  """
   @spec defaults(keyword()) :: {:ok, Jevex.Backend.defaults()} | {:error, Jevex.Error.t()}
   def defaults(_opts),
     do:
       {:ok, %{endpoint: "https://openrouter.ai/api/alpha/decisions", model: "typesafe/jev-1.13"}}
 
   @impl true
+  @doc """
+  Encodes validated state and native question maps into the provider request body.
+
+      iex> Jevex.Backends.OpenRouter.encode("jev-latest", "Help", %{})
+      %{"model" => "jev-latest", "state" => "Help", "questions" => %{}}
+  """
   @spec encode(String.t(), term(), map()) :: map()
   defdelegate encode(model, state, questions), to: Jevex.Backends.Native
   @impl true
+  @doc """
+  Returns provider protocol headers. Bearer authentication is added by the client.
+  """
   @spec headers(String.t()) :: [{String.t(), String.t()}]
   def headers(_model), do: []
   @impl true
+  @doc """
+  Normalizes a decoded provider JSON object without performing final answer validation.
+
+      iex> Jevex.Backends.OpenRouter.decode(%{"answers" => %{}})
+      {:ok, %{"answers" => %{}}}
+  """
   @spec decode(term()) :: {:ok, map()} | {:error, Jevex.Error.t()}
   defdelegate decode(body), to: Jevex.Backends.Native
   @impl true
+  @doc """
+  Whether response validation permits omitted router metadata while still validating present fields.
+  """
   @spec partial_metadata?() :: boolean()
   def partial_metadata?, do: true
 end
@@ -102,6 +189,13 @@ defmodule Jevex.Backends.Cloudflare do
   """
   @behaviour Jevex.Backend
   @impl true
+  @doc """
+  Validates `account_id` as one ASCII URL segment and builds the Workers AI endpoint.
+
+      iex> {:ok, defaults} = Jevex.Backends.Cloudflare.defaults(account_id: "account123")
+      iex> defaults.model
+      "typesafe/jev"
+  """
   @spec defaults(keyword()) :: {:ok, Jevex.Backend.defaults()} | {:error, Jevex.Error.t()}
   def defaults(opts) do
     case Keyword.get(opts, :account_id) do
@@ -122,14 +216,29 @@ defmodule Jevex.Backends.Cloudflare do
   end
 
   @impl true
+  @doc """
+  Encodes validated state and native question maps into the provider request body.
+
+      iex> Jevex.Backends.Cloudflare.encode("typesafe/jev", "Help", %{})
+      %{"model" => "typesafe/jev", "input" => %{"state" => "Help", "questions" => %{}}}
+  """
   @spec encode(String.t(), term(), map()) :: map()
   def encode(model, state, questions),
     do: %{"model" => model, "input" => %{"state" => state, "questions" => questions}}
 
   @impl true
+  @doc """
+  Returns provider protocol headers. Bearer authentication is added by the client.
+  """
   @spec headers(String.t()) :: [{String.t(), String.t()}]
   def headers(_model), do: []
   @impl true
+  @doc """
+  Unwraps successful Cloudflare envelopes or accepts a native object; failure envelopes return an error.
+
+      iex> Jevex.Backends.Cloudflare.decode(%{"success" => true, "result" => %{"answers" => %{}}})
+      {:ok, %{"answers" => %{}}}
+  """
   @spec decode(term()) :: {:ok, map()} | {:error, Jevex.Error.t()}
   def decode(%{"success" => true, "result" => result}) when is_map(result), do: {:ok, result}
 
@@ -143,6 +252,9 @@ defmodule Jevex.Backends.Cloudflare do
 
   def decode(body), do: Jevex.Backends.Native.decode(body)
   @impl true
+  @doc """
+  Whether response validation permits omitted router metadata while still validating present fields.
+  """
   @spec partial_metadata?() :: boolean()
   def partial_metadata?, do: false
 
@@ -168,6 +280,13 @@ defmodule Jevex.Backends.Vercel do
   """
   @behaviour Jevex.Backend
   @impl true
+  @doc """
+  Returns endpoint and model defaults; the client applies explicit overrides afterward.
+
+      iex> {:ok, defaults} = Jevex.Backends.Vercel.defaults([])
+      iex> defaults.model
+      "typesafe-ai/jev"
+  """
   @spec defaults(keyword()) :: {:ok, Jevex.Backend.defaults()} | {:error, Jevex.Error.t()}
   def defaults(_opts),
     do:
@@ -178,6 +297,14 @@ defmodule Jevex.Backends.Vercel do
        }}
 
   @impl true
+  @doc """
+  Converts native noul questions to boolean questions; model selection is sent in headers.
+
+      iex> questions = %{"urgent" => %{"type" => "noul", "instructions" => "Urgent?"}}
+      iex> body = Jevex.Backends.Vercel.encode("typesafe-ai/jev", "Help", questions)
+      iex> {body["questions"]["urgent"]["type"], Map.has_key?(body, "model")}
+      {"boolean", false}
+  """
   @spec encode(String.t(), term(), map()) :: map()
   def encode(_model, state, questions) do
     questions =
@@ -190,6 +317,9 @@ defmodule Jevex.Backends.Vercel do
   end
 
   @impl true
+  @doc """
+  Returns provider protocol headers. Bearer authentication is added by the client.
+  """
   @spec headers(String.t()) :: [{String.t(), String.t()}]
   def headers(model),
     do: [
@@ -200,6 +330,13 @@ defmodule Jevex.Backends.Vercel do
     ]
 
   @impl true
+  @doc """
+  Normalizes boolean answers and usage names, preserving absent metadata as absent.
+
+      iex> {:ok, body} = Jevex.Backends.Vercel.decode(%{"answers" => %{"urgent" => %{"type" => "boolean", "probability" => 0.8}}})
+      iex> {body["answers"]["urgent"], Map.has_key?(body, "usage")}
+      {%{"type" => "noul", "noul" => 0.8}, false}
+  """
   @spec decode(term()) :: {:ok, map()} | {:error, Jevex.Error.t()}
   def decode(%{"answers" => answers} = body) when is_map(answers) do
     answers =
@@ -236,6 +373,9 @@ defmodule Jevex.Backends.Vercel do
        %Jevex.Error{kind: :response, message: "Vercel response must contain an answers object"}}
 
   @impl true
+  @doc """
+  Whether response validation permits omitted router metadata while still validating present fields.
+  """
   @spec partial_metadata?() :: boolean()
   def partial_metadata?, do: true
 
@@ -251,18 +391,43 @@ defmodule Jevex.Backends.Custom do
   @moduledoc "Native System One protocol with an explicitly configured endpoint and model."
   @behaviour Jevex.Backend
   @impl true
+  @doc """
+  Returns nil defaults, requiring the client to supply an explicit endpoint and model.
+
+      iex> {:ok, defaults} = Jevex.Backends.Custom.defaults([])
+      iex> defaults.model
+      nil
+  """
   @spec defaults(keyword()) :: {:ok, Jevex.Backend.defaults()} | {:error, Jevex.Error.t()}
   def defaults(_opts), do: {:ok, %{endpoint: nil, model: nil}}
   @impl true
+  @doc """
+  Encodes validated state and native question maps into the provider request body.
+
+      iex> Jevex.Backends.Custom.encode("jev-latest", "Help", %{})
+      %{"model" => "jev-latest", "state" => "Help", "questions" => %{}}
+  """
   @spec encode(String.t(), term(), map()) :: map()
   defdelegate encode(model, state, questions), to: Jevex.Backends.Native
   @impl true
+  @doc """
+  Returns provider protocol headers. Bearer authentication is added by the client.
+  """
   @spec headers(String.t()) :: [{String.t(), String.t()}]
   def headers(_model), do: []
   @impl true
+  @doc """
+  Normalizes a decoded provider JSON object without performing final answer validation.
+
+      iex> Jevex.Backends.Custom.decode(%{"answers" => %{}})
+      {:ok, %{"answers" => %{}}}
+  """
   @spec decode(term()) :: {:ok, map()} | {:error, Jevex.Error.t()}
   defdelegate decode(body), to: Jevex.Backends.Native
   @impl true
+  @doc """
+  Whether response validation permits omitted router metadata while still validating present fields.
+  """
   @spec partial_metadata?() :: boolean()
   def partial_metadata?, do: false
 end

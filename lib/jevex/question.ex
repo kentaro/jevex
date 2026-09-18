@@ -15,9 +15,23 @@ defmodule Jevex.Question do
   """
   alias Jevex.Error
 
+  @typedoc "A JSON value after object keys have been normalized to strings."
   @type json ::
           nil | boolean() | number() | String.t() | [json()] | %{optional(String.t()) => json()}
+  @typedoc "A normalized instruction or rubric entry; a scalar number is not an entry."
   @type entry :: nil | String.t() | [json()] | %{optional(String.t()) => json()}
+  @typedoc "Input JSON values may also use atom object keys, which are normalized."
+  @type input_json ::
+          nil
+          | boolean()
+          | number()
+          | String.t()
+          | [input_json()]
+          | %{optional(String.t() | atom()) => input_json()}
+  @typedoc "Accepted instruction and rubric entry input, before normalization."
+  @type input_entry ::
+          nil | String.t() | [input_json()] | %{optional(String.t() | atom()) => input_json()}
+  @typedoc "A validated question; use the constructors to enforce rubric constraints."
   @type t :: %__MODULE__{
           type: :noul | :choice | :score,
           instructions: entry(),
@@ -26,31 +40,99 @@ defmodule Jevex.Question do
   @enforce_keys [:type, :instructions]
   defstruct [:type, :instructions, :criteria]
 
-  @doc "Creates a probability-valued yes/no question with optional true/false criteria."
-  @spec noul(entry(), map() | nil) :: {:ok, t()} | {:error, Error.t()}
+  @doc """
+  Creates a yes-probability question with optional criteria for `true` and `false`.
+
+  Returns `{:ok, question}` after normalizing atom object keys to strings, or
+  `{:error, %Jevex.Error{kind: :validation}}` for invalid instructions or criteria.
+  Criteria may be `nil` or a map containing only `"true"` and `"false"` keys
+  (or their atom equivalents); either criterion may be omitted.
+
+      iex> {:ok, question} = Jevex.Question.noul("Urgent?", %{true: "Act now", false: "Can wait"})
+      iex> question.criteria
+      %{"true" => "Act now", "false" => "Can wait"}
+      iex> question.type
+      :noul
+  """
+  @spec noul(input_entry(), map() | nil) :: {:ok, t()} | {:error, Error.t()}
   def noul(instructions, criteria \\ nil), do: build(:noul, instructions, criteria)
 
-  @doc "Creates a choice question with 1 to 255 options mapped to rubric entries."
-  @spec choice(entry(), map()) :: {:ok, t()} | {:error, Error.t()}
+  @doc """
+  Creates a choice question with 1 to 255 options mapped to rubric entries.
+
+  Option keys must be nonempty strings or atoms that normalize to nonempty
+  strings. Colliding atom/string keys are rejected. Returns `{:ok, question}`
+  or a validation error; no option string is converted into an atom.
+
+      iex> {:ok, question} = Jevex.Question.choice("Team?", %{billing: "Payments", support: "Technical"})
+      iex> question.criteria
+      %{"billing" => "Payments", "support" => "Technical"}
+      iex> {:error, error} = Jevex.Question.choice("Team?", %{})
+      iex> error.kind
+      :validation
+  """
+  @spec choice(input_entry(), map()) :: {:ok, t()} | {:error, Error.t()}
   def choice(instructions, criteria), do: build(:choice, instructions, criteria)
 
-  @doc "Creates a score question with 2 to 10 ordered rubric entries."
-  @spec score(entry(), [entry()]) :: {:ok, t()} | {:error, Error.t()}
+  @doc """
+  Creates a score question with 2 to 10 ordered rubric entries.
+
+  Entries correspond to zero-based score levels, so two entries describe a
+  score range of 0 to 1. Returns `{:ok, question}` or a validation error.
+
+      iex> {:ok, question} = Jevex.Question.score("Impact?", ["Low", "High"])
+      iex> question.criteria
+      ["Low", "High"]
+      iex> {:error, error} = Jevex.Question.score("Impact?", ["Only one level"])
+      iex> error.kind
+      :validation
+  """
+  @spec score(input_entry(), [input_entry()]) :: {:ok, t()} | {:error, Error.t()}
   def score(instructions, criteria), do: build(:score, instructions, criteria)
 
-  @doc "Like `noul/2`, but raises `Jevex.Error` on invalid input."
-  @spec noul!(entry(), map() | nil) :: t()
+  @doc """
+  Returns a validated noul question, raising `Jevex.Error` on invalid input.
+
+      iex> Jevex.Question.noul!(%{instruction: "Urgent?"}).instructions
+      %{"instruction" => "Urgent?"}
+  """
+  @spec noul!(input_entry(), map() | nil) :: t()
   def noul!(instructions, criteria \\ nil), do: unwrap(noul(instructions, criteria))
 
-  @doc "Like `choice/2`, but raises `Jevex.Error` on invalid input."
-  @spec choice!(entry(), map()) :: t()
+  @doc """
+  Returns a validated choice question, raising `Jevex.Error` on invalid input.
+
+      iex> Jevex.Question.choice!("Team?", %{"billing" => "Payments"}).type
+      :choice
+      iex> Jevex.Question.choice!("Team?", %{})
+      ** (Jevex.Error) choice requires at least one option
+  """
+  @spec choice!(input_entry(), map()) :: t()
   def choice!(instructions, criteria), do: unwrap(choice(instructions, criteria))
 
-  @doc "Like `score/2`, but raises `Jevex.Error` on invalid input."
-  @spec score!(entry(), [entry()]) :: t()
+  @doc """
+  Returns a validated score question, raising `Jevex.Error` on invalid input.
+
+      iex> Jevex.Question.score!("Impact?", ["Low", "High"]).type
+      :score
+  """
+  @spec score!(input_entry(), [input_entry()]) :: t()
   def score!(instructions, criteria), do: unwrap(score(instructions, criteria))
 
-  @doc "Checks a question, including structs constructed or updated directly."
+  @doc """
+  Checks a question, including structs constructed or updated directly.
+
+  Returns `:ok` when the question can be normalized and validated, or
+  `{:error, %Jevex.Error{kind: :validation}}`. It does not mutate its argument;
+  use `encode/1` to obtain the normalized wire representation.
+
+      iex> question = Jevex.Question.score!("Impact?", ["Low", "High"])
+      iex> Jevex.Question.validate(question)
+      :ok
+      iex> {:error, error} = Jevex.Question.validate(%{question | criteria: []})
+      iex> error.kind
+      :validation
+  """
   @spec validate(term()) :: :ok | {:error, Error.t()}
   def validate(%__MODULE__{type: type, instructions: instructions, criteria: criteria}) do
     case build(type, instructions, criteria) do
@@ -61,7 +143,18 @@ defmodule Jevex.Question do
 
   def validate(_), do: invalid("expected a Jevex.Question")
 
-  @doc "Returns a normalized string-keyed native API question; raises on invalid input."
+  @doc """
+  Returns the normalized string-keyed native API map for a question struct.
+
+  Revalidates the struct and raises `Jevex.Error` for invalid question contents.
+  The argument must be a `Jevex.Question` struct. Absent noul criteria are omitted
+  rather than encoded as a `"criteria": null` property.
+
+      iex> Jevex.Question.encode(Jevex.Question.noul!("Urgent?"))
+      %{"type" => "noul", "instructions" => "Urgent?"}
+      iex> Jevex.Question.encode(Jevex.Question.score!("Impact?", ["Low", "High"]))
+      %{"type" => "score", "instructions" => "Impact?", "criteria" => ["Low", "High"]}
+  """
   @spec encode(t()) :: map()
   def encode(%__MODULE__{type: type, instructions: instructions, criteria: criteria}) do
     q = unwrap(build(type, instructions, criteria))

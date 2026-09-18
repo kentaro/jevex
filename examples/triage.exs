@@ -1,5 +1,6 @@
 # Run with `mix run examples/triage.exs` for a deterministic offline demonstration.
-# Add `--live` for one real Lolipop request; set LOLIPOP_AI_GATEWAY_API_KEY first.
+# Add `--live` for the official Jev API; set TYPESAFE_API_KEY first.
+# Add `--live --lolipop` for a router example; set LOLIPOP_AI_GATEWAY_API_KEY.
 
 defmodule Jevex.Example.Triage do
   use Jevex.Schema
@@ -62,20 +63,24 @@ defmodule Jevex.Example.Runner do
       case args do
         [] ->
           IO.puts("Offline fixture response; no network request will be made.")
-          [api_key: "fixture-only", transport: Jevex.Example.FixtureTransport]
+          [backend: :typesafe, api_key: "fixture-only", transport: Jevex.Example.FixtureTransport]
 
         ["--live"] ->
+          IO.puts("Making one real request to the official Jev API.")
+          [backend: :typesafe, api_key: {:system, "TYPESAFE_API_KEY"}]
+
+        ["--live", "--lolipop"] ->
           IO.puts("Making one real request to Lolipop AI Gateway.")
-          [api_key: {:system, "LOLIPOP_AI_GATEWAY_API_KEY"}]
+          [backend: :lolipop, api_key: {:system, "LOLIPOP_AI_GATEWAY_API_KEY"}]
 
         _ ->
-          IO.puts(:stderr, "Usage: mix run examples/triage.exs [--live]")
+          IO.puts(:stderr, "Usage: mix run examples/triage.exs [--live [--lolipop]]")
           System.halt(2)
       end
 
     state = %{subject: "Checkout is down", body: "Nobody can complete a purchase."}
 
-    with {:ok, client} <- Jevex.Client.new(Keyword.merge(opts, backend: :lolipop, max_retries: 0)),
+    with {:ok, client} <- Jevex.Client.new(Keyword.put(opts, :max_retries, 0)),
          {:ok, %Triage{} = result} <- Triage.evaluate(client, state) do
       IO.inspect(result, label: "Typed result")
 

@@ -37,7 +37,26 @@ defmodule Jevex.Fallback do
         ]
   @keys [:on_error, :on_low_confidence, :min_confidence, :min_noul_certainty]
 
-  @doc false
+  @doc """
+  Validates an evaluation's fallback actions and confidence thresholds.
+
+  Called before sending the primary request. Unknown or duplicate keys, invalid
+  backup clients, unsupported callback arities, and out-of-range thresholds
+  return a configuration error. A low-confidence action requires at least one
+  threshold. Credential sources are not resolved during this check.
+
+      iex> Jevex.Fallback.validate_options(min_confidence: 0.8, min_noul_certainty: 0.9)
+      :ok
+
+      iex> {:error, error} = Jevex.Fallback.validate_options(min_confidence: 1.1)
+      iex> error.kind
+      :configuration
+
+      iex> backup = Jevex.Client.new!(backend: :typesafe)
+      iex> {:error, error} = Jevex.Fallback.validate_options(on_low_confidence: backup)
+      iex> error.kind
+      :configuration
+  """
   @spec validate_options(term()) :: :ok | {:error, Error.t()}
   def validate_options(opts) do
     with true <- Keyword.keyword?(opts),
@@ -86,7 +105,39 @@ defmodule Jevex.Fallback do
     end
   end
 
-  @doc false
+  @doc """
+  Applies a validated fallback policy to an already validated evaluation result.
+
+  This function integrates the policy with the evaluation layer. Its caller
+  must first call `validate_options/1` and validate successful responses through
+  `Jevex.Response`. Use `Jevex.evaluate/4` for the complete public entry point.
+  The supplied question map uses normalized string IDs.
+
+  Returns the primary result if no action is needed. Otherwise invokes at most
+  one matching backup client or callback. Successful fallback responses are
+  revalidated and must pass the same thresholds; no fallback chain is followed.
+
+  ## Examples
+
+  A strong negative Noul answer meets a certainty threshold:
+
+      iex> client = Jevex.Client.new!(backend: :typesafe)
+      iex> questions = %{"urgent" => Jevex.Question.noul!("Urgent?")}
+      iex> response = %Jevex.Response{model: "fixture", usage: nil, answers: %{"urgent" => %Jevex.Answer.Noul{noul: 0.05}}}
+      iex> Jevex.Fallback.resolve({:ok, response}, client, "state", questions, min_noul_certainty: 0.9) == {:ok, response}
+      true
+
+  A callback can recover a transport failure without another network request:
+
+      iex> client = Jevex.Client.new!(backend: :typesafe)
+      iex> questions = %{"urgent" => Jevex.Question.noul!("Urgent?")}
+      iex> answer = %Jevex.Response{model: "local-policy", usage: nil, answers: %{"urgent" => %Jevex.Answer.Noul{noul: 0.95}}}
+      iex> failure = %Jevex.Error{kind: :transport, message: "Connection unavailable"}
+      iex> fallback = fn %{reason: :error, error: %{kind: :transport}} -> {:ok, answer} end
+      iex> {:ok, recovered} = Jevex.Fallback.resolve({:error, failure}, client, "state", questions, on_error: fallback)
+      iex> recovered.answers["urgent"].noul
+      0.95
+  """
   @spec resolve({:ok, Response.t()} | {:error, Error.t()}, Client.t(), term(), map(), options()) ::
           {:ok, Response.t()} | {:error, Error.t()}
   def resolve({:ok, response} = result, client, state, questions, opts) do

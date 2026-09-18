@@ -4,8 +4,8 @@ The schema describes questions, and the client selects a backend at runtime.
 A schema never embeds an API key, URL, or provider.
 
 ```elixir
-primary = Jevex.Client.new!(backend: :lolipop)
-backup = Jevex.Client.new!(backend: :typesafe)
+primary = Jevex.Client.new!(backend: :typesafe)
+backup = Jevex.Client.new!(backend: :lolipop)
 
 Ticket.evaluate(primary, ticket,
   on_error: backup,
@@ -46,8 +46,8 @@ Jevex.Client.new!(
 import Config
 
 config :jevex, :client,
-  backend: :lolipop,
-  api_key: {:system, "LOLIPOP_AI_GATEWAY_API_KEY"},
+  backend: :typesafe,
+  api_key: {:system, "TYPESAFE_API_KEY"},
   timeout: 15_000,
   max_retries: 2
 ```

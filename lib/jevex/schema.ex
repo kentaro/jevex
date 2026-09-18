@@ -33,11 +33,38 @@ defmodule Jevex.Schema do
   string values, so string choices use `String.t()` and runtime validation.
   Typespecs support static analysis; they do not make Elixir a statically typed
   language. The response decoder validates external data before construction.
+
+  ## Examples
+
+  Compile a literal schema and inspect its generated questions without an API key:
+
+      iex> ast = quote do
+      ...>   defmodule Jevex.Schema.DocumentedTriage do
+      ...>     use Jevex.Schema
+      ...>     noul :urgent, "Urgent?"
+      ...>     choice :team, "Team?", %{billing: "Payments", support: "Technical"}
+      ...>     score :impact, "Impact?", ["Low", "High"]
+      ...>   end
+      ...> end
+      iex> [{schema, _bytecode}] = Code.compile_quoted(ast)
+      iex> schema.questions()["team"].criteria
+      %{"billing" => "Payments", "support" => "Technical"}
+      iex> Map.keys(struct(schema)) |> Enum.sort()
+      [:__struct__, :impact, :team, :urgent]
+      iex> Jevex.Question.encode(schema.questions()["impact"])
+      %{"type" => "score", "instructions" => "Impact?", "criteria" => ["Low", "High"]}
   """
 
   @reserved [:__struct__, :__exception__, :__meta__]
 
-  @doc "Installs the declaration macros and generates the schema API."
+  @doc """
+  Installs declaration macros and the before-compile callback via `use Jevex.Schema`.
+
+  Accepts no options. Generates a result struct with required fields, a `t/0`
+  type, `questions/0`, `evaluate/2,3`, and `evaluate!/2,3`. An empty schema or
+  invalid declaration raises `CompileError`; this macro makes no network calls.
+  """
+  @spec __using__(Macro.t()) :: Macro.t()
   defmacro __using__(opts) do
     if opts != [], do: compile_error!(__CALLER__, "Jevex.Schema does not accept options")
 
@@ -48,17 +75,45 @@ defmodule Jevex.Schema do
     end
   end
 
-  @doc "Declares a noul (yes probability) question, optionally with criteria."
+  @doc """
+  Declares a noul question whose answer contains a yes probability in 0..1.
+
+  `name` must be a non-reserved literal atom. Instructions and optional criteria
+  follow `Jevex.Question.noul/2`; criteria may contain only true/false keys.
+  All arguments must be literals. Invalid declarations raise `CompileError`.
+
+      noul :urgent, "Urgent?", %{true: "Act now", false: "Can wait"}
+  """
+  @spec noul(Macro.t(), Macro.t(), Macro.t()) :: Macro.t()
   defmacro noul(name, text, criteria \\ nil) do
     declare(__CALLER__, :noul, name, text, criteria)
   end
 
-  @doc "Declares a choice question with an atom- or string-keyed literal map."
+  @doc """
+  Declares a choice question with a literal map of 1 to 255 options.
+
+  Option keys may be non-boolean, non-nil atoms or nonempty strings. Their values
+  follow `Jevex.Question.choice/2`. Atom keys are restored only for the selected
+  choice; probability keys remain strings. Atom/string collisions, duplicate
+  literal keys, computed arguments, and invalid fields raise `CompileError`.
+
+      choice :team, "Team?", %{billing: "Payments", support: "Technical"}
+  """
+  @spec choice(Macro.t(), Macro.t(), Macro.t()) :: Macro.t()
   defmacro choice(name, text, choices) do
     declare(__CALLER__, :choice, name, text, choices)
   end
 
-  @doc "Declares a score question with its ordered literal list of labels."
+  @doc """
+  Declares a score question with 2 to 10 literal ordered rubric entries.
+
+  Entries follow `Jevex.Question.score/2` and correspond to zero-based levels.
+  The returned answer contains a numeric score, not a selected label. Invalid
+  fields, entries, or nonliteral arguments raise `CompileError`.
+
+      score :impact, "Impact?", ["Low", "Medium", "High"]
+  """
+  @spec score(Macro.t(), Macro.t(), Macro.t()) :: Macro.t()
   defmacro score(name, text, labels) do
     declare(__CALLER__, :score, name, text, labels)
   end
@@ -92,7 +147,23 @@ defmodule Jevex.Schema do
     end
   end
 
-  @doc false
+  @doc """
+  Internal compile-time registration hook emitted by the declaration macros.
+
+  Stores one validated question on the module being compiled. `file` and `line`
+  identify the declaration for `CompileError` diagnostics. Returns `:ok` after
+  registration. This is an implementation hook, not a dynamic-question API;
+  application code should use the macros or `Jevex.Question` constructors.
+  """
+  @spec __register__(
+          module(),
+          :noul | :choice | :score,
+          atom(),
+          term(),
+          term(),
+          String.t(),
+          pos_integer()
+        ) :: :ok
   def __register__(module, kind, name, text, spec, file, line) do
     env = %{file: file, line: line}
     fields = Module.get_attribute(module, :jevex_fields) || []
@@ -135,7 +206,14 @@ defmodule Jevex.Schema do
 
   defp normalize_spec(_kind, spec, _env), do: {spec, nil}
 
-  @doc false
+  @doc """
+  Internal compiler callback that emits the schema struct, types, and functions.
+
+  Called automatically by the compiler after declarations have been registered.
+  Returns generated AST and raises `CompileError` when no fields were declared.
+  Application code should not invoke this callback directly.
+  """
+  @spec __before_compile__(Macro.Env.t()) :: Macro.t()
   defmacro __before_compile__(env) do
     fields = env.module |> Module.get_attribute(:jevex_fields) |> Enum.reverse()
     if fields == [], do: compile_error!(env, "Jevex.Schema requires at least one question")
@@ -152,13 +230,29 @@ defmodule Jevex.Schema do
     quote do
       @enforce_keys unquote(names)
       defstruct unquote(names)
+
+      @typedoc "Typed answers for every declared field; atom choices use their exact declared union."
       @type t :: %__MODULE__{unquote_splicing(types)}
 
-      @doc "Returns the validated, string-keyed question map for this schema."
+      @doc """
+      Returns the compile-time validated question map with string IDs.
+
+      The map can be passed to `Jevex.evaluate/4` to retain response model and
+      usage metadata, or to `Jevex.HTTP.post/3` for untyped backend-normalized JSON.
+      This function performs no requests and needs no client or credentials.
+      """
       @spec questions() :: %{required(String.t()) => Jevex.Question.t()}
       def questions, do: unquote(Macro.escape(questions))
 
-      @doc "Evaluates state and returns a typed schema struct or a structured error."
+      @doc """
+      Evaluates state and returns `{:ok, schema_struct}` or a structured error.
+
+      Accepts all `Jevex.evaluate/4` confidence and fallback options. Successful
+      answers are validated before conversion; selected atom choices are restored
+      from the declaration, while probability-map keys stay strings. The result
+      omits response model and usage metadata; use `questions/0` with the direct
+      API when those are needed. Errors are returned as `{:error, Jevex.Error.t()}`.
+      """
       @spec evaluate(Jevex.Client.t(), term(), Jevex.Fallback.options()) ::
               {:ok, t()} | {:error, Jevex.Error.t()}
       def evaluate(client, state, opts \\ []) do
@@ -181,7 +275,12 @@ defmodule Jevex.Schema do
         end
       end
 
-      @doc "Evaluates state, returning the schema struct or raising `Jevex.Error`."
+      @doc """
+      Evaluates state, returning the schema struct or raising `Jevex.Error`.
+
+      Uses the same validation, confidence gates, and fallback policy as
+      `evaluate/3`. The options default to an empty list.
+      """
       @spec evaluate!(Jevex.Client.t(), term(), Jevex.Fallback.options()) :: t()
       def evaluate!(client, state, opts \\ []) do
         case evaluate(client, state, opts) do

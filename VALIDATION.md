@@ -6,13 +6,16 @@ not represented here as an observed result.
 
 ## Automated checks
 
-- `mix test --cover`: 76 passing cases (75 tests + 1 doctest), 3 live tests
-  excluded; line coverage above 96% (the configured minimum is 85%).
+- `mix test --cover`: 133 passing cases (76 tests + 57 doctests), 3 live tests
+  excluded; line coverage 96.67% (the configured minimum is 85%).
 - `mix compile --warnings-as-errors`: passed.
 - `mix dialyzer`: passed with no warnings, including the fallback implementation.
 - `mix docs --warnings-as-errors`: passed; HTML, Markdown and EPUB generated.
 - `mix hex.build`: passed; local package built, not published.
 - `mix run examples/triage.exs`: offline schema/transport example passed.
+- Module, function, macro and callback documentation coverage: passed. All
+  authored API documentation is present and English; README and guides are also
+  English. Doctests exercise documented examples without network requests.
 
 The suite includes compile-time DSL failures and generated choice types, strict
 question/response validation, all built-in backend wire contracts, credential

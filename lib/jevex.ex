@@ -4,13 +4,42 @@ defmodule Jevex do
 
   For reusable declarations, see `Jevex.Schema`. For dynamic questions:
 
-      client = Jevex.Client.new!(backend: :lolipop)
+      client = Jevex.Client.new!(backend: :typesafe)
       questions = %{urgent: Jevex.Question.noul!("Does this need immediate action?")}
       # Jevex.evaluate(client, "The checkout is down", questions)
 
   Results are `{:ok, %Jevex.Response{}}` or `{:error, %Jevex.Error{}}`.
   Wire answer IDs remain strings. Schemas provide declared atom fields and
   closed-set choice atoms without interning any server-provided strings.
+
+  ## Complete offline example
+
+  This fixture exercises the same validation and typed result path as an actual
+  request, without using a credential or making a network connection. For real
+  inference, omit `:transport` and use a runtime credential source.
+
+      iex> defmodule DocumentationTransport do
+      ...>   @behaviour Jevex.Transport
+      ...>   def request(_request, _client) do
+      ...>     body = Jason.encode!(%{
+      ...>       model: "fixture",
+      ...>       answers: %{urgent: %{type: "noul", noul: 0.95}},
+      ...>       usage: %{input_tokens: 10, output_tokens: 2}
+      ...>     })
+      ...>     {:ok, %{status: 200, headers: %{}, body: body}}
+      ...>   end
+      ...> end; :ok
+      :ok
+      iex> client = Jevex.Client.new!(backend: :typesafe, api_key: "fixture", transport: DocumentationTransport)
+      iex> questions = %{urgent: Jevex.Question.noul!("Does this need immediate action?")}
+      iex> {:ok, response} = Jevex.evaluate(client, "Checkout is down", questions)
+      iex> response.answers["urgent"]
+      %Jevex.Answer.Noul{noul: 0.95}
+      iex> response.usage
+      %{"input_tokens" => 10, "output_tokens" => 2}
+      iex> {:error, error} = Jevex.evaluate(client, "Checkout is down", questions, min_noul_certainty: 0.99)
+      iex> error.kind
+      :low_confidence
   """
   alias Jevex.{Client, Error, Fallback, HTTP, Response}
 
@@ -34,6 +63,16 @@ defmodule Jevex do
   Exactly one fallback is allowed; the fallback must also satisfy the thresholds.
   An unmet threshold without a fallback returns `kind: :low_confidence`.
   All options are validated before sending the first request.
+
+  ## Examples
+
+  Invalid evaluation options fail before credential resolution or network I/O:
+
+      iex> client = Jevex.Client.new!(backend: :typesafe)
+      iex> questions = %{urgent: Jevex.Question.noul!("Urgent?")}
+      iex> {:error, error} = Jevex.evaluate(client, "state", questions, min_confidence: 1.5)
+      iex> error.kind
+      :configuration
 
       # Jevex.evaluate(primary, state, questions,
       #   on_error: backup,
@@ -62,7 +101,16 @@ defmodule Jevex do
     end
   end
 
-  @doc "Like `evaluate/4`, but raises `Jevex.Error` on failure."
+  @doc """
+  Evaluates questions and returns the validated response, raising on failure.
+
+  Accepts the same options as `evaluate/4`. Use the non-bang function when
+  errors belong in a `with` chain or need recovery through pattern matching.
+
+      iex> client = Jevex.Client.new!(backend: :typesafe)
+      iex> Jevex.evaluate!(client, "state", %{})
+      ** (Jevex.Error) questions must not be empty
+  """
   @spec evaluate!(Client.t(), term(), map() | keyword(), Fallback.options()) :: Response.t()
   def evaluate!(client, state, questions, opts \\ []) do
     case evaluate(client, state, questions, opts) do

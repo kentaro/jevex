@@ -3,8 +3,8 @@ defmodule Jevex.Client do
   Immutable runtime connection settings, independent of any schema.
 
       {:ok, client} = Jevex.Client.new(
-        backend: :lolipop,
-        api_key: {:system, "LOLIPOP_AI_GATEWAY_API_KEY"}
+        backend: :typesafe,
+        api_key: {:system, "TYPESAFE_API_KEY"}
       )
 
   Built-ins: `:typesafe`, `:lolipop`, `:openrouter`, `:cloudflare`, `:vercel`,
@@ -58,7 +58,22 @@ defmodule Jevex.Client do
         }
   @keys ~w(backend endpoint model api_key account_id timeout connect_timeout max_retries max_retry_delay max_request_bytes max_response_bytes transport)a
 
-  @doc "Builds and validates connection settings; explicit options override application defaults."
+  @doc """
+  Builds and validates connection settings; explicit options override application defaults.
+
+  Construction validates the credential source but does not resolve an environment
+  variable or call a credential resolver. No network request is made. When changing
+  the configured backend, provider-specific application defaults are discarded to
+  avoid sending the old provider's credential to a different host.
+
+      iex> {:ok, client} = Jevex.Client.new(backend: :typesafe, api_key: "example-key")
+      iex> {client.backend, client.model}
+      {Jevex.Backends.TypeSafe, "jev-latest"}
+
+      iex> {:error, error} = Jevex.Client.new(timeout: 0)
+      iex> error.kind
+      :configuration
+  """
   @spec new(keyword()) :: {:ok, t()} | {:error, Error.t()}
   def new(opts \\ []) do
     defaults = Application.get_env(:jevex, :client, [])
@@ -78,7 +93,15 @@ defmodule Jevex.Client do
     end
   end
 
-  @doc "Like `new/1`, raising `Jevex.Error` on invalid configuration."
+  @doc """
+  Like `new/1`, raising `Jevex.Error` on invalid configuration.
+
+  Client inspection excludes credentials and endpoint URLs.
+
+      iex> client = Jevex.Client.new!(backend: :typesafe, api_key: "example-secret")
+      iex> String.contains?(inspect(client), "example-secret")
+      false
+  """
   @spec new!(keyword()) :: t()
   def new!(opts \\ []) do
     case new(opts) do
@@ -87,7 +110,20 @@ defmodule Jevex.Client do
     end
   end
 
-  @doc false
+  @doc """
+  Validates a client struct, including endpoint safety and transport callbacks.
+
+  This is also called before requests, so modifying an existing struct cannot
+  bypass configuration validation. It checks the credential source's shape;
+  `credential/1` resolves and validates the actual value separately.
+
+      iex> client = Jevex.Client.new!(backend: :typesafe, api_key: "example-key")
+      iex> Jevex.Client.validate(client)
+      :ok
+      iex> {:error, error} = Jevex.Client.validate(%{client | endpoint: "http://example.com/inference"})
+      iex> error.kind
+      :configuration
+  """
   @spec validate(t()) :: :ok | {:error, Error.t()}
   def validate(%__MODULE__{} = c) do
     cond do
@@ -132,7 +168,23 @@ defmodule Jevex.Client do
     end
   end
 
-  @doc false
+  @doc """
+  Resolves and validates the credential for one request.
+
+  Accepts a literal key, an environment-variable reference, or a zero-arity
+  resolver. Resolvers run on every call, allowing credential rotation. Exceptions,
+  throws, and exits become sanitized configuration errors. Do not log the returned
+  key; the caller adds it only to the authorization header.
+
+      iex> client = Jevex.Client.new!(backend: :typesafe, api_key: fn -> "rotated-example-key" end)
+      iex> Jevex.Client.credential(client)
+      {:ok, "rotated-example-key"}
+
+      iex> client = Jevex.Client.new!(backend: :typesafe, api_key: fn -> raise "private-detail" end)
+      iex> {:error, error} = Jevex.Client.credential(client)
+      iex> {error.kind, String.contains?(inspect(error), "private-detail")}
+      {:configuration, false}
+  """
   @spec credential(t()) :: {:ok, String.t()} | {:error, Error.t()}
   def credential(%__MODULE__{api_key: source}) do
     key =

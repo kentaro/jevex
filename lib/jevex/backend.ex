@@ -12,9 +12,14 @@ defmodule Jevex.Backend do
   """
 
   @type defaults :: %{endpoint: String.t() | nil, model: String.t() | nil}
+  @doc "Provides a full endpoint URL and model defaults, or a sanitized configuration error."
   @callback defaults(keyword()) :: {:ok, defaults()} | {:error, Jevex.Error.t()}
+  @doc "Builds a JSON-encodable request map from validated state and native questions."
   @callback encode(String.t(), term(), %{String.t() => map()}) :: map()
+  @doc "Returns provider-specific headers, excluding bearer authentication owned by the client."
   @callback headers(String.t()) :: [{String.t(), String.t()}]
+  @doc "Normalizes decoded wire data into the native answer representation, without inventing missing metadata."
   @callback decode(term()) :: {:ok, map()} | {:error, Jevex.Error.t()}
+  @doc "Returns true when the provider contract permits missing response metadata."
   @callback partial_metadata?() :: boolean()
 end

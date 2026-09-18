@@ -21,6 +21,7 @@ defmodule Jevex.Response do
   @enforce_keys [:model, :answers, :usage]
   defstruct [:model, :answers, :usage]
 
+  @typedoc "A decoded response with string answer IDs; router metadata may be absent."
   @type t :: %__MODULE__{
           model: String.t() | nil,
           answers: %{String.t() => Answer.t()},
@@ -28,8 +29,75 @@ defmodule Jevex.Response do
         }
   @tolerance 1.0e-4
 
-  @doc "Decodes and validates a response against the exact requested questions."
-  @spec decode(binary() | map(), %{String.t() => Question.t()}, keyword()) ::
+  @doc """
+  Decodes a JSON body or string-keyed map against the exact requested questions.
+
+  Returns `{:ok, response}` or `{:error, %Jevex.Error{kind: :response}}` for
+  malformed JSON, mismatched answer coverage, or invalid values. Question IDs
+  must already be strings and questions must be valid `Jevex.Question` structs.
+  Unknown response metadata is ignored. No response strings are interned as atoms.
+
+  The only option is `allow_partial_metadata: true` (default `false`), used by
+  supported routers. It permits absent model, usage fields, confidence,
+  probabilities, and score legend. Explicit null metadata remains invalid.
+  Missing confidence and probabilities become `nil`; missing score legend is
+  derived from the rubric. Supplied metadata is always validated.
+
+  Choice distributions must cover all options, sum to one within `1.0e-4`, and
+  assign the selected choice the highest probability (ties within the same
+  tolerance are accepted). Score distributions cover all zero-based levels;
+  scores are checked for bounds, not equality to their weighted average.
+
+  ## Examples
+
+  Decode all three answer kinds without making a network request:
+
+      iex> questions = %{
+      ...>   "urgent" => Jevex.Question.noul!("Urgent?"),
+      ...>   "team" => Jevex.Question.choice!("Team?", %{billing: "Payments", support: "Technical"}),
+      ...>   "impact" => Jevex.Question.score!("Impact?", ["Low", "High"])
+      ...> }
+      iex> body = %{
+      ...>   "model" => "jev-example",
+      ...>   "usage" => %{"input_tokens" => 10, "output_tokens" => 5},
+      ...>   "answers" => %{
+      ...>     "urgent" => %{"type" => "noul", "noul" => 0.9},
+      ...>     "team" => %{"type" => "choice", "choice" => "billing", "probabilities" => %{"billing" => 0.8, "support" => 0.2}, "confidence" => 0.8},
+      ...>     "impact" => %{"type" => "score", "score" => 0.75, "legend" => %{"0" => "Low", "1" => "High"}, "probabilities" => %{"0" => 0.25, "1" => 0.75}, "confidence" => 0.75}
+      ...>   }
+      ...> }
+      iex> {:ok, response} = Jevex.Response.decode(Jason.encode!(body), questions)
+      iex> response.answers["urgent"]
+      %Jevex.Answer.Noul{noul: 0.9}
+      iex> response.answers["team"].choice
+      "billing"
+      iex> response.answers["impact"].score
+      0.75
+      iex> response.usage
+      %{"input_tokens" => 10, "output_tokens" => 5}
+      iex> malformed = put_in(body, ["answers", "urgent", "noul"], 1.5)
+      iex> {:error, error} = Jevex.Response.decode(malformed, questions)
+      iex> error.kind
+      :response
+
+  Omitted router metadata remains absent rather than being fabricated:
+
+      iex> questions = %{"team" => Jevex.Question.choice!("Team?", %{billing: "Payments"})}
+      iex> body = %{"answers" => %{"team" => %{"type" => "choice", "choice" => "billing"}}}
+      iex> {:ok, response} = Jevex.Response.decode(body, questions, allow_partial_metadata: true)
+      iex> {response.model, response.usage, response.answers["team"].confidence, response.answers["team"].probabilities}
+      {nil, nil, nil, nil}
+      iex> {:error, error} = Jevex.Response.decode(body, questions)
+      iex> error.kind
+      :response
+
+  Invalid JSON returns a structured error:
+
+      iex> {:error, error} = Jevex.Response.decode("not json", %{})
+      iex> {error.kind, error.message}
+      {:response, "response is not valid JSON"}
+  """
+  @spec decode(binary() | map(), %{String.t() => Question.t()}, allow_partial_metadata: boolean()) ::
           {:ok, t()} | {:error, Error.t()}
   def decode(body, questions, opts \\ [])
 

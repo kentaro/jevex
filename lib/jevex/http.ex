@@ -14,7 +14,19 @@ defmodule Jevex.HTTP do
   """
   alias Jevex.{Client, Error, Question}
 
-  @doc "Posts one evaluation and returns the backend-normalized JSON response."
+  @doc """
+  Posts one evaluation and returns the backend-normalized JSON response.
+
+  Validates client settings, state, and questions before sending. Question IDs
+  may be atoms or strings; duplicate IDs after normalization are rejected.
+  A successful map has not yet passed typed answer validation: prefer
+  `Jevex.evaluate/4` unless you deliberately need the low-level boundary.
+
+      iex> client = Jevex.Client.new!(backend: :typesafe)
+      iex> {:error, error} = Jevex.HTTP.post(client, "state", %{})
+      iex> {error.kind, error.message}
+      {:validation, "questions must not be empty"}
+  """
   @spec post(Client.t(), term(), map() | keyword()) :: {:ok, map()} | {:error, Error.t()}
   def post(client, state, questions) do
     with {:ok, questions} <- questions(questions) do
@@ -22,7 +34,17 @@ defmodule Jevex.HTTP do
     end
   end
 
-  @doc false
+  @doc """
+  Sends a request using an already normalized, validated question map.
+
+  This is a layer-integration function. Call `questions/1` first, or use
+  `post/3` for the complete low-level input validation path. Client and state
+  are still validated here, and each question is encoded defensively.
+
+      iex> {:error, error} = Jevex.HTTP.request(:invalid, "state", %{})
+      iex> error.kind
+      :validation
+  """
   @spec request(Client.t(), term(), map()) :: {:ok, map()} | {:error, Error.t()}
   def request(%Client{} = client, state, questions) do
     with :ok <- Client.validate(client),
@@ -50,7 +72,23 @@ defmodule Jevex.HTTP do
 
   def request(_, _, _), do: invalid("expected a Jevex.Client")
 
-  @doc false
+  @doc """
+  Validates questions and normalizes their IDs to strings.
+
+  Accepts a nonempty map or a proper list of `{id, question}` pairs. Rejects
+  duplicate IDs, empty IDs, malformed entries, and invalid question structs.
+  No request is sent and no external strings are converted to atoms.
+
+      iex> question = Jevex.Question.noul!("Urgent?")
+      iex> {:ok, questions} = Jevex.HTTP.questions(urgent: question)
+      iex> questions == %{"urgent" => question}
+      true
+
+      iex> question = Jevex.Question.noul!("Urgent?")
+      iex> {:error, error} = Jevex.HTTP.questions(%{:urgent => question, "urgent" => question})
+      iex> error.kind
+      :validation
+  """
   @spec questions(term()) :: {:ok, %{String.t() => Question.t()}} | {:error, Error.t()}
   def questions(questions) when is_map(questions) and not is_struct(questions),
     do: normalize_questions(Map.to_list(questions))
