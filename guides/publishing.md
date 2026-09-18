@@ -1,9 +1,8 @@
 # Publishing Jevex to Hex
 
-Jevex is prepared as a Mix/Hex library and is currently unpublished. A local
-package build is not a registry release. The source repository is [kentaro/jevex](https://github.com/kentaro/jevex).
-Hosted HexDocs are not available yet; add that link after publication. This guide
-describes the maintainer release process.
+Jevex is distributed as the `:jevex` Mix/Hex library. The source repository is
+[kentaro/jevex](https://github.com/kentaro/jevex). This guide describes the
+maintainer release process.
 
 ## Prepare the release
 

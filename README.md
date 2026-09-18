@@ -50,9 +50,7 @@ Elixir release. Local verification uses Elixir 1.20.2 / OTP 29. CI is configured
 for Elixir 1.17 / OTP 27 and Elixir 1.20 / OTP 29. Check the
 [GitHub Actions runs](https://github.com/kentaro/jevex/actions) for the latest status.
 
-Jevex is packaged for Hex as `:jevex`. **Version 0.1.0 has not yet been published**;
-the registry dependency below is the installation form to use after publication,
-not a claim that `mix deps.get` can fetch this unreleased version today:
+Add the `:jevex` Hex package to your dependencies:
 
 ```elixir
 defp deps do
@@ -60,7 +58,7 @@ defp deps do
 end
 ```
 
-For local development before publication, use the source checkout instead:
+For local development, use a source checkout instead:
 
 ```elixir
 defp deps do
@@ -68,7 +66,8 @@ defp deps do
 end
 ```
 
-Adjust the local path and run `mix deps.get`. See [publishing](guides/publishing.md)
+Run `mix deps.get` after adding the dependency. For a checkout, adjust the local path.
+See [publishing](guides/publishing.md)
 for the Hex package and release workflow.
 
 Set `TYPESAFE_API_KEY` in the process environment and configure `config/runtime.exs`:

@@ -13,7 +13,7 @@ The measurements below describe local validation unless stated otherwise.
 - `mix dialyzer`: passed with no warnings, including the fallback implementation.
 - `mix docs --warnings-as-errors`: passed; HTML, Markdown and EPUB generated.
 - `mix hex.publish --dry-run --yes`: passed; package and documentation build checks.
-- `mix hex.build`: passed; standard Hex tarball built, not published.
+- `mix hex.build`: passed; standard Hex tarball built.
 - Unpacked package compiled and passed a separate consumer test using all four
   scalar forms, tagged results, and lazy streams; only runtime dependencies installed.
 - `mix run examples/syntax.exs`: offline expression and composition examples passed.
@@ -70,6 +70,6 @@ request/response behavior is verified with fixtures. Their authenticated inferen
 has **not** been tested with live keys. Alpha/experimental endpoints can change.
 
 The release artifact is a standard Hex package tarball, with source and English
-documentation. The source is available on [GitHub](https://github.com/kentaro/jevex); the package
-has not been published to Hex. Registry installation
-and hosted HexDocs are therefore not claimed as verified.
+documentation. The source is available on [GitHub](https://github.com/kentaro/jevex).
+The checks above describe pre-release validation; registry installation and hosted
+documentation are verified separately after publication.
