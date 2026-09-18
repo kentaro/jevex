@@ -1,6 +1,10 @@
 defmodule Jevex.Error do
   @moduledoc """
-  A safe error returned at configuration, request, and response boundaries.
+  A sanitized exception representing a configuration or evaluation failure.
+
+  `~>>` returns `{:error, error}` so normal `with` and `case` expressions can
+  handle failures. `~>` raises the same exception. Explicit typed evaluation
+  follows the usual non-bang and bang function conventions.
 
   `kind` distinguishes `:configuration`, `:validation`, `:transport`, `:http`,
   `:response`, and `:low_confidence` failures. Errors deliberately omit raw bodies, URLs, state,

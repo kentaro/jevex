@@ -1,5 +1,11 @@
 # Verified backend contracts
 
+This is the wire-reference companion to [backend configuration](backends.md).
+Start with `use Jevex` and the official TypeSafe configuration there. Both
+`~>` and `~>>`, as well as explicit batched evaluation, pass through the same
+adapters described below. The syntax does not assume providers share an HTTP
+endpoint or identical response fields.
+
 Checked against public primary sources on 2026-09-18. Jev makes typed decisions;
 none of these adapters sends a Chat Completions request. Lolipop was subsequently
 verified with authenticated inference; see [Validation](../VALIDATION.md).
@@ -14,7 +20,10 @@ Other providers have contract tests but no authenticated live verification.
 | Vercel | `https://ai-gateway.vercel.sh/v4/ai/evaluation-model` | `typesafe-ai/jev` |
 
 All requests use JSON and `Authorization: Bearer <credential>`. Credentials are
-resolved by the client at request time; adapters never own credentials.
+resolved by the client at request time; adapters never own credentials. `~>`
+extracts a scalar after validation, and `~>>` wraps that scalar in an `:ok`
+tuple. To inspect the metadata discussed here, use `Jevex.evaluate/4` and its
+typed `Jevex.Response` rather than an operator.
 
 ## Native protocol: TypeSafe and Lolipop
 
@@ -56,8 +65,9 @@ are not exposed by the initial Jevex client interface. Extend the backend to use
 them. The adapter pins `typesafe/jev-1.13`; callers can choose another model.
 
 OpenRouter's schema marks choice and score distributions, confidence, and score
-legends as optional. Missing metadata stays absent; Jevex must not manufacture
-certainty. Its OpenAPI score schema permits one level, but Jevex intentionally
+legends as optional. Missing confidence and probabilities become `nil`; a
+missing score legend is reconstructed from the question's known rubric. Jevex
+does not manufacture certainty. Its OpenAPI score schema permits one level, but Jevex intentionally
 retains the native TypeSafe minimum of two.
 
 The endpoint is rooted at `/api/alpha/decisions`, without `/v1`. The documentation
@@ -144,7 +154,9 @@ Sources:
 TypeSafe specifically documents 401, 422, 429, and 529; it recommends exponential
 backoff for 429 and 529. Provider rate limits and pricing remain external
 configuration and must not be hard-coded as timeless facts. These adapters have
-source-based contract coverage, not a claim of live authenticated compatibility.
+source-based contract coverage. Lolipop also has authenticated validation as
+recorded in [Validation](../VALIDATION.md); that result does not establish live
+compatibility for the other providers.
 OpenRouter alpha and Vercel experimental contracts should be rechecked when
 upgrading. `Custom` supports a self-hosted native-compatible endpoint, requiring
 an explicit endpoint and model; it does not promise compatibility with arbitrary

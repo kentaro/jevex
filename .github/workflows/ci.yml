@@ -30,4 +30,13 @@ jobs:
       - run: mix test --cover
       - run: mix dialyzer
       - run: mix docs --warnings-as-errors
-      - run: mix hex.build
+      - run: mix hex.publish --dry-run --yes
+      - run: mix hex.build --unpack --output /tmp/jevex-package
+      - run: mix deps.get --only prod
+        working-directory: /tmp/jevex-package
+        env:
+          MIX_ENV: prod
+      - run: mix compile --warnings-as-errors
+        working-directory: /tmp/jevex-package
+        env:
+          MIX_ENV: prod

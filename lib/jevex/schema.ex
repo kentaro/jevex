@@ -1,6 +1,10 @@
 defmodule Jevex.Schema do
   @moduledoc """
-  Compile-time declarations for reusable, typed Jev evaluation schemas.
+  Compile-time declarations for reusable batches of typed Jev questions.
+
+  Start with `use Jevex` for decisions that compose directly with Elixir
+  expressions. Use this advanced interface when several questions belong in
+  one reusable batch and the result should have a named struct and typespec.
 
       defmodule Ticket do
         use Jevex.Schema

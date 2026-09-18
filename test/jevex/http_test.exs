@@ -18,7 +18,10 @@ defmodule Jevex.HTTPTest do
   end
 
   defp client(opts \\ []),
-    do: Client.new!([api_key: "secret", transport: Transport, max_retry_delay: 0] ++ opts)
+    do:
+      Client.new!(
+        Keyword.merge([api_key: "secret", transport: Transport, max_retry_delay: 0], opts)
+      )
 
   defp questions, do: %{urgent: Question.noul!("Urgent?")}
 

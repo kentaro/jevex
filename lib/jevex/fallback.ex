@@ -1,6 +1,10 @@
 defmodule Jevex.Fallback do
   @moduledoc """
-  A single-attempt fallback and confidence policy for `Jevex.evaluate/4`.
+  A single-attempt fallback and confidence policy shared by all evaluation APIs.
+
+  Configure syntax policies at runtime under `config :jevex, :syntax, [...]`.
+  Both scalar and tagged-result operators apply the policy before extracting
+  their result. For typed batches, pass options directly to `Jevex.evaluate/4`.
 
   Supply a backup `Jevex.Client` or a callback accepting the context below.
   The context's questions use normalized string IDs, and `client` identifies
@@ -205,19 +209,21 @@ defmodule Jevex.Fallback do
   end
 
   # Reconstruct the wire shape and use the same boundary validator as HTTP.
-  defp validate_response(%Response{} = response, questions) do
-    with true <- is_map(response.answers) and not is_struct(response.answers),
-         {:ok, answers} <- encode_answers(response.answers) do
+  defp validate_response(%Response{answers: answers, model: model, usage: usage}, questions) do
+    with true <- is_map(answers) and not is_struct(answers),
+         {:ok, answers} <- encode_answers(answers) do
       body =
         %{"answers" => answers}
-        |> put_metadata("model", response.model)
-        |> put_metadata("usage", response.usage)
+        |> put_metadata("model", model)
+        |> put_metadata("usage", usage)
 
       Response.decode(body, questions, allow_partial_metadata: true)
     else
       _ -> callback_error()
     end
   end
+
+  defp validate_response(_, _), do: callback_error()
 
   defp encode_answers(answers) do
     Enum.reduce_while(answers, {:ok, %{}}, fn {id, answer}, {:ok, acc} ->
@@ -230,19 +236,28 @@ defmodule Jevex.Fallback do
 
   defp encode_answer(%Answer.Noul{noul: value}), do: {:ok, %{"type" => "noul", "noul" => value}}
 
-  defp encode_answer(%Answer.Choice{} = answer) do
+  defp encode_answer(%Answer.Choice{
+         choice: choice,
+         probabilities: probabilities,
+         confidence: confidence
+       }) do
     {:ok,
-     %{"type" => "choice", "choice" => answer.choice}
-     |> put_metadata("probabilities", answer.probabilities)
-     |> put_metadata("confidence", answer.confidence)}
+     %{"type" => "choice", "choice" => choice}
+     |> put_metadata("probabilities", probabilities)
+     |> put_metadata("confidence", confidence)}
   end
 
-  defp encode_answer(%Answer.Score{} = answer) do
+  defp encode_answer(%Answer.Score{
+         score: score,
+         legend: legend,
+         probabilities: probabilities,
+         confidence: confidence
+       }) do
     {:ok,
-     %{"type" => "score", "score" => answer.score}
-     |> put_metadata("legend", answer.legend)
-     |> put_metadata("probabilities", answer.probabilities)
-     |> put_metadata("confidence", answer.confidence)}
+     %{"type" => "score", "score" => score}
+     |> put_metadata("legend", legend)
+     |> put_metadata("probabilities", probabilities)
+     |> put_metadata("confidence", confidence)}
   end
 
   defp encode_answer(_), do: :error

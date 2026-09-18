@@ -1,6 +1,10 @@
 defmodule Jevex.Client do
   @moduledoc """
-  Immutable runtime connection settings, independent of any schema.
+  Runtime connection settings shared by Jevex syntax and explicit evaluation.
+
+  Start with `use Jevex` and configure the official TypeSafe client at runtime.
+  Both decision operators use this client underneath; construct clients directly
+  for per-request provider selection, typed batches, or transport injection.
 
       {:ok, client} = Jevex.Client.new(
         backend: :typesafe,
@@ -125,7 +129,21 @@ defmodule Jevex.Client do
       :configuration
   """
   @spec validate(t()) :: :ok | {:error, Error.t()}
-  def validate(%__MODULE__{} = c) do
+  def validate(
+        %__MODULE__{
+          endpoint: _,
+          model: _,
+          api_key: _,
+          timeout: _,
+          connect_timeout: _,
+          max_request_bytes: _,
+          max_response_bytes: _,
+          max_retries: _,
+          max_retry_delay: _,
+          transport: _,
+          backend: _
+        } = c
+      ) do
     cond do
       not valid_endpoint?(c.endpoint) ->
         invalid(
@@ -168,6 +186,8 @@ defmodule Jevex.Client do
     end
   end
 
+  def validate(_), do: invalid("expected a complete Jevex.Client")
+
   @doc """
   Resolves and validates the credential for one request.
 
@@ -203,10 +223,13 @@ defmodule Jevex.Client do
     _, _ -> invalid("API credential could not be resolved")
   end
 
+  def credential(_), do: invalid("expected a Jevex.Client with an API credential source")
+
   defp keyword_options(opts) do
-    if Keyword.keyword?(opts) and Enum.all?(Keyword.keys(opts), &(&1 in @keys)),
-      do: :ok,
-      else: invalid("client options must be a keyword list of documented options")
+    if Keyword.keyword?(opts) and Enum.all?(Keyword.keys(opts), &(&1 in @keys)) and
+         length(Keyword.keys(opts)) == length(Enum.uniq(Keyword.keys(opts))),
+       do: :ok,
+       else: invalid("client options must be a keyword list of unique documented options")
   end
 
   # Changing providers must not send the application default provider's key to

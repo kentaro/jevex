@@ -1,6 +1,10 @@
 defmodule Jevex.Backend do
   @moduledoc """
-  HTTP protocol adapter for Jev inference services.
+  Provider protocol contract beneath Jevex syntax and typed evaluation.
+
+  Built-in providers are selected through `Jevex.Client`; decision expressions
+  are unchanged when switching between the official TypeSafe API and a router.
+  Implement this behaviour only when an additional wire protocol is needed.
 
   Adapters supply connection defaults, encode already validated native questions,
   add protocol headers, and normalize decoded JSON responses. The client owns

@@ -1,6 +1,10 @@
 defmodule Jevex.Response do
   @moduledoc """
-  Validated native Jev response.
+  The full validated response returned by explicit typed evaluation.
+
+  `Jevex.Syntax` extracts a boolean, probability, choice key, or score from this
+  representation. Use `Jevex.evaluate/4` directly when you need answer metadata,
+  reported model information, usage, or a batch of answers.
 
   `decode/2` accepts a JSON string or decoded string-keyed map and the original
   question map. It verifies answer coverage and types, option/level coverage,
@@ -99,17 +103,22 @@ defmodule Jevex.Response do
   """
   @spec decode(binary() | map(), %{String.t() => Question.t()}, allow_partial_metadata: boolean()) ::
           {:ok, t()} | {:error, Error.t()}
-  def decode(body, questions, opts \\ [])
+  def decode(body, questions, opts \\ []) do
+    with :ok <- validate_options(opts) do
+      do_decode(body, questions, opts)
+    end
+  end
 
-  def decode(body, questions, opts) when is_binary(body) do
+  defp do_decode(body, questions, opts) when is_binary(body) do
     case Jason.decode(body) do
-      {:ok, decoded} -> decode(decoded, questions, opts)
+      {:ok, decoded} -> do_decode(decoded, questions, opts)
       {:error, _} -> invalid("response is not valid JSON")
     end
   end
 
-  def decode(%{"answers" => answers} = body, questions, opts)
-      when is_map(answers) and is_map(questions) do
+  defp do_decode(%{"answers" => answers} = body, questions, opts)
+       when is_map(answers) and not is_struct(answers) and is_map(questions) and
+              not is_struct(questions) and not is_struct(body) do
     model = Map.get(body, "model")
     usage = Map.get(body, "usage")
     partial? = Keyword.get(opts, :allow_partial_metadata, false)
@@ -133,14 +142,25 @@ defmodule Jevex.Response do
     end
   end
 
-  def decode(_, _, _), do: invalid("response must contain model, answers, and usage")
+  defp do_decode(_, _, _), do: invalid("response must contain model, answers, and usage")
+
+  defp validate_options(opts) do
+    if Keyword.keyword?(opts) and
+         Enum.all?(opts, fn {key, value} ->
+           key == :allow_partial_metadata and is_boolean(value)
+         end) and length(opts) <= 1 do
+      :ok
+    else
+      invalid("response options must contain only one boolean allow_partial_metadata option")
+    end
+  end
 
   defp valid_questions?(questions) do
     map_size(questions) > 0 and
       Enum.all?(questions, fn {id, q} -> is_binary(id) and Question.validate(q) == :ok end)
   end
 
-  defp valid_usage?(usage, true) when is_map(usage) do
+  defp valid_usage?(usage, true) when is_map(usage) and not is_struct(usage) do
     Enum.all?(["input_tokens", "output_tokens"], fn key ->
       case Map.fetch(usage, key) do
         :error -> true
@@ -149,7 +169,8 @@ defmodule Jevex.Response do
     end)
   end
 
-  defp valid_usage?(%{"input_tokens" => input, "output_tokens" => output}, false) do
+  defp valid_usage?(%{"input_tokens" => input, "output_tokens" => output} = usage, false)
+       when not is_struct(usage) do
     is_integer(input) and input >= 0 and is_integer(output) and output >= 0
   end
 
@@ -213,6 +234,7 @@ defmodule Jevex.Response do
       |> Map.new(fn {entry, index} -> {Integer.to_string(index), entry} end)
 
     if is_number(score) and score >= 0 and score <= length(criteria) - 1 and is_map(legend) and
+         not is_struct(legend) and
          same_keys?(legend, levels) and valid_legend?(legend) and
          optional_distribution?(probs, levels) and
          optional_probability?(confidence) do
@@ -231,7 +253,7 @@ defmodule Jevex.Response do
   defp decode_answer(_, _),
     do: invalid("answer type or required fields do not match the question")
 
-  defp metadata(answer, question, opts) when is_map(answer) do
+  defp metadata(answer, question, opts) when is_map(answer) and not is_struct(answer) do
     cond do
       Enum.any?(["confidence", "probabilities"], &(Map.get(answer, &1) == :jevex_missing)) ->
         :invalid
@@ -260,7 +282,7 @@ defmodule Jevex.Response do
     end
   end
 
-  defp metadata(answer, _, _), do: answer
+  defp metadata(_, _, _), do: :invalid
   defp missing_to_nil(:jevex_missing), do: nil
   defp missing_to_nil(value), do: value
   defp optional_probability?(:jevex_missing), do: true
@@ -277,7 +299,7 @@ defmodule Jevex.Response do
 
   defp probability?(value), do: is_number(value) and value >= 0 and value <= 1
 
-  defp distribution?(probs, expected) when is_map(probs) do
+  defp distribution?(probs, expected) when is_map(probs) and not is_struct(probs) do
     same_keys?(probs, expected) and Enum.all?(Map.values(probs), &probability?/1) and
       abs(Enum.sum(Map.values(probs)) - 1) <= @tolerance
   end

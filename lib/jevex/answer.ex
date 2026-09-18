@@ -2,6 +2,9 @@ defmodule Jevex.Answer.Noul do
   @moduledoc """
   A validated yes probability in the inclusive range 0 to 1.
 
+  Syntax extracts this probability with `{:noul, question}` or converts it to
+  a boolean for a string question. Explicit evaluation preserves this struct.
+
   `noul` is numeric, not a boolean: a value near zero means "no", near one
   means "yes", and near 0.5 indicates uncertainty. The optional evaluation gate
   `min_noul_certainty` uses `max(p, 1 - p)` rather than the probability of yes.
@@ -22,6 +25,9 @@ end
 defmodule Jevex.Answer.Choice do
   @moduledoc """
   A selected option with optional probabilities and confidence.
+
+  Syntax extracts the original declared choice key. Use explicit evaluation
+  when the complete distribution or provider-reported confidence is needed.
 
   The direct API returns `choice` as a string. A schema may restore a declared
   atom choice using its closed lookup table. `probabilities`, when present,
@@ -55,6 +61,9 @@ defmodule Jevex.Answer.Score do
   @moduledoc """
   A numeric score across zero-based rubric levels with legend and metadata.
 
+  Syntax extracts the numeric score from a question and its ordered levels.
+  Explicit evaluation retains the legend and optional metadata in this struct.
+
   For `n` rubric entries, `score` is within 0..(n - 1) and may be fractional.
   The provider reports the score; the decoder checks bounds but does not require
   it to equal the weighted average of the supplied probability distribution.
@@ -85,7 +94,10 @@ end
 
 defmodule Jevex.Answer do
   @moduledoc """
-  The tagged union of the direct API's validated answer structs.
+  The tagged union of the explicit evaluation API's validated answer structs.
+
+  Syntax operators extract scalar decisions; this union is useful for typed
+  batches, response inspection, and custom fallback implementations.
 
   Pattern-match on `Jevex.Answer.Noul`, `Jevex.Answer.Choice`, or
   `Jevex.Answer.Score` to distinguish answer kinds. The union uses string choice

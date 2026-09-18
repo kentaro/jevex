@@ -1,6 +1,10 @@
 defmodule Jevex.HTTP do
   @moduledoc """
-  Low-level Jev request layer, usable without macros or typed response structs.
+  The request layer beneath Jevex syntax and typed evaluation.
+
+  Most applications start with `Jevex.Syntax`; use this module when integrating
+  normalized wire responses with your own decoding. For a batch of validated
+  answer structs, use `Jevex.evaluate/4`.
 
   `post/3` accepts a state and a map (or keyword list) of `Jevex.Question`s.
   It validates input, applies the selected backend protocol, handles bounded
@@ -35,11 +39,11 @@ defmodule Jevex.HTTP do
   end
 
   @doc """
-  Sends a request using an already normalized, validated question map.
+  Sends a request, defensively validating and normalizing its question map.
 
-  This is a layer-integration function. Call `questions/1` first, or use
-  `post/3` for the complete low-level input validation path. Client and state
-  are still validated here, and each question is encoded defensively.
+  This is a layer-integration function. It accepts the same question inputs as
+  `post/3` and revalidates them even when a caller already used `questions/1`.
+  Client, state, and questions are checked before credential resolution.
 
       iex> {:error, error} = Jevex.HTTP.request(:invalid, "state", %{})
       iex> error.kind
@@ -48,11 +52,12 @@ defmodule Jevex.HTTP do
   @spec request(Client.t(), term(), map()) :: {:ok, map()} | {:error, Error.t()}
   def request(%Client{} = client, state, questions) do
     with :ok <- Client.validate(client),
+         {:ok, questions} <- questions(questions),
          :ok <- state_shape(state),
-         {:ok, key} <- Client.credential(client),
          encoded = Map.new(questions, fn {id, q} -> {id, Question.encode(q)} end),
          payload = client.backend.encode(client.model, state, encoded),
-         {:ok, body} <- encode(payload, client.max_request_bytes) do
+         {:ok, body} <- encode(payload, client.max_request_bytes),
+         {:ok, key} <- Client.credential(client) do
       request = %{
         url: client.endpoint,
         headers:

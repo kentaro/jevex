@@ -1,6 +1,9 @@
 defmodule Jevex.Transport do
   @moduledoc """
-  Injectable HTTP boundary. Implementations receive an encoded POST request
+  The injectable HTTP boundary used by every Jevex evaluation interface.
+
+  Configure a transport on `Jevex.Client` to exercise syntax or typed batches
+  with deterministic fixtures. Implementations receive an encoded POST request
   and client settings, and return a status, headers, and raw JSON body.
   Header names should be lowercase. Transport errors must not contain secrets.
 
@@ -26,12 +29,19 @@ end
 
 defmodule Jevex.Transport.Req do
   @moduledoc """
-  Default HTTP transport built on Req and Finch.
+  Default HTTP transport built on Req and Finch, shared by syntax and typed APIs.
 
   TLS verification follows Req's secure defaults. Redirects, compression,
   automatic retries, and JSON decoding are disabled. The transport stops
   receiving when `max_response_bytes` is exceeded. The HTTP layer owns retry
   policy and validates JSON after receiving the body.
+
+  `client.timeout` configures both per-chunk receive inactivity and Finch's
+  complete-response request timeout. Finch applies the latter only to HTTP/1,
+  on a best-effort basis: it can overrun and is not a precise wall-clock deadline.
+  HTTP/2 does not receive that complete-response bound and retains the receive
+  inactivity timeout. `client.connect_timeout` controls connection establishment
+  and pool checkout. These are per-attempt limits, not a total evaluation deadline.
 
   Applications normally configure `Jevex.Client` rather than call this module
   directly. Client validation requires HTTPS except for loopback HTTP tests;
@@ -47,6 +57,11 @@ defmodule Jevex.Transport.Req do
   HTTP responses, including errors and redirects. Connection failures become
   `{:error, :request_failed}`; an exceeded body limit returns a `Jevex.Error`
   with kind `:response`. No raw transport exception is exposed.
+
+  Configures `receive_timeout` and HTTP/1-only best-effort `request_timeout`
+  from `client.timeout`, and connection/pool timeouts from `client.connect_timeout`.
+  A complete-response limit is not guaranteed for HTTP/2 or as an exact elapsed
+  duration; retries and fallback are controlled by higher layers.
   """
   @spec request(Jevex.Transport.request(), Jevex.Client.t()) ::
           {:ok, Jevex.Transport.response()} | {:error, :request_failed | Jevex.Error.t()}
@@ -58,7 +73,11 @@ defmodule Jevex.Transport.Req do
         headers: request.headers,
         body: request.body,
         receive_timeout: client.timeout,
-        connect_options: [timeout: client.connect_timeout],
+        request_timeout: client.timeout,
+        finch: [
+          pool_timeout: client.connect_timeout,
+          conn_opts: [transport_opts: [timeout: client.connect_timeout]]
+        ],
         retry: false,
         redirect: false,
         compressed: false,

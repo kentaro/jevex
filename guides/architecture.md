@@ -1,133 +1,187 @@
 # Architecture
 
-Jevex separates syntax from requests. `Jevex.Schema` compiles declarations into
-ordinary questions, a result struct, and small functions that call `Jevex.evaluate/3`.
-It does not own HTTP, authentication, retries, or provider-specific behavior.
+Jevex puts decision syntax above an independent request and validation layer.
+`use Jevex` imports two operators. They do not rewrite Elixir control flow or
+require a schema. `state ~> question` returns a boolean, raw noul probability,
+declared choice key, or numeric score; `state ~>> question` returns the same value
+inside `{:ok, value}` or a structured `{:error, error}`. Both expand to ordinary
+runtime calls.
 
-## Evaluation path
+## Expression evaluation path
 
 ```text
-Schema.evaluate(client, state)              Dynamic question constructors
-          |                                           |
-          +------------> Jevex.evaluate/3 <-----------+
-                                  |
-                         Jevex.HTTP.request/3
-                      validation / JSON / credentials
-                      retry policy / response limits
-                                  |
-                      Jevex.Backend implementation
-                    endpoint / model / protocol mapping
-                                  |
-                        Jevex.Transport.request/2
-                         Req POST by default
-                                  |
-                      backend JSON normalization
-                                  |
-                         Jevex.Response.decode/3
-                    coverage / types / bounds / metadata
-                                  |
-                        %Jevex.Response{answers: ...}
-                                  |
-                   schema field and choice lookup tables
-                                  |
-                            %YourSchema{}
+use Jevex
+state ~> question                 state ~>> question
+        |
+Jevex.Syntax.evaluate! / evaluate
+  runtime client and module configuration
+  one question; confidence/fallback policy
+        |
+Jevex.evaluate/4  <--- direct question maps or advanced Schema batches
+        |
+Jevex.HTTP.request/3
+  input checks, credentials, JSON, retries, size limits
+        |
+Jevex.Backend -> Jevex.Transport
+  provider protocol -> HTTPS POST
+        |
+backend JSON normalization
+        |
+Jevex.Response.decode/3
+  coverage, answer types, choice membership, bounds, metadata
+        |
+Jevex.Fallback
+  confidence gates; at most one backup or callback
+        |
+validated Jevex.Response
+        |
+syntax scalar extraction
+  boolean / raw probability / declared option / score
+        |
+scalar or {:ok, scalar}; raised or tagged Jevex.Error
 ```
 
-The macro path returns only the schema result. The direct path retains model,
-usage, and all typed answers in `Jevex.Response`. Use the direct API with
-`YourSchema.questions/0` if both reusable declarations and response metadata are
-needed.
+The direct API returns `Jevex.Response` with typed answer structs, model, and usage
+metadata. Both syntax operators extract a scalar after the same validation and
+policy; only the error/result presentation differs. Schema batches instead map validated answers into declared struct fields.
 
-## Contracts by layer
+## Responsibilities
 
 | Layer | Responsibility | Output |
 | --- | --- | --- |
-| `Jevex.Question` | Validate question kinds, instructions, and rubrics | Valid question structs and native JSON maps |
-| `Jevex.Client` | Validate runtime backend, endpoint, credentials source, and limits | Immutable client |
-| `Jevex.HTTP` | Validate inputs, encode requests, resolve credentials, retry, bound responses | Backend-normalized JSON map or error |
-| `Jevex.Backend` | Map native questions to a provider protocol and normalize responses | Protocol defaults and JSON transformation |
-| `Jevex.Transport` | Perform a POST request with configured time/size limits | HTTP status, headers, raw body |
-| `Jevex.Response` | Validate returned answers against their requested questions | `Jevex.Response` with typed answers |
-| `Jevex.Schema` | Compile declarations and map validated answers into named fields | User-defined result struct |
+| `Jevex.Syntax` | Expand operators, resolve runtime configuration, construct one question, extract a value | Scalar or tagged scalar/error |
+| `Jevex.Question` | Validate instructions, question kinds, and rubrics | Normalized question structs and wire maps |
+| `Jevex.Client` | Validate backend, connection settings, credential source, and limits | Immutable client |
+| `Jevex.HTTP` | Encode requests, resolve credentials, retry eligible statuses, bound responses | Backend-normalized JSON or error |
+| `Jevex.Backend` | Apply provider protocol and response transformations | Defaults, headers, JSON transformation |
+| `Jevex.Transport` | Execute one configured POST | HTTP status, headers, raw JSON |
+| `Jevex.Response` | Validate answers against the exact questions | Typed answer structs and response metadata |
+| `Jevex.Fallback` | Apply confidence gates and one-step recovery | Valid response or structured error |
+| `Jevex.Schema` | Compile reusable batch declarations and convert validated answers | Typed batch result struct |
 
-`Jevex.HTTP.post/3` is intentionally lower level than `Jevex.evaluate/3`: it does
-not provide typed answer validation. Applications should ordinarily use the latter.
-Question IDs are normalized to strings before a request. Ambiguous IDs, such as
-`:urgent` and `"urgent"` in the same map, are rejected.
+`Jevex.HTTP.post/3` exposes the request layer independently; it does not decode
+typed answers. `Jevex.evaluate/4` adds answer validation and optional policy.
+Question IDs normalize to strings, and ambiguous atom/string IDs are rejected.
 
-## Schema compilation
+## Macro expansion and ordinary Elixir semantics
 
-`use Jevex.Schema` imports `noul/2`, `noul/3`, `choice/3`, and `score/3`. Each macro
-parses literal AST without evaluating user expressions. It validates the field
-name, rejects duplicate declarations, and delegates question validation to
-`Jevex.Question`. The before-compile callback emits:
+Each operator emits a runtime call with the original state and question operands,
+each evaluated exactly once. Neither captures nor replaces an enclosing `if`,
+`case`, `cond`, `with`, comprehension, collection function, or short-circuit
+operator. Ordinary Elixir determines which expressions are reached.
 
-1. A struct with every declared field in `@enforce_keys`.
-2. A `t/0` typespec with the answer type for each field.
-3. `questions/0`, returning the validated low-level map.
-4. `evaluate/2,3` and `evaluate!/2,3`, delegating requests and evaluation options
-   to `Jevex.evaluate/4`.
+Noul supports two presentations: string questions convert the accepted yes
+probability to a boolean, while `{:noul, question}` returns the probability.
+Choice maps the selected string back to a supplied atom or string key. Score
+preserves the returned numeric value within the requested zero-based rubric range.
+No answer kind requires a schema or special branching syntax.
 
-Module attributes, function calls, interpolation, and other computed arguments
-are deliberately unsupported. Dynamic input belongs in the direct API. This also
-means macro expansion cannot run a supplied expression as a side effect.
+Literal right operands are validated during compilation without executing
+arbitrary quoted expressions. Dynamic right operands are evaluated and validated
+at runtime. Guards, match patterns, and module-body inference are rejected; an
+interactive import is allowed. No request is made while importing the operator.
 
-Atom choice keys compile into a closed string-to-atom lookup table. The native
-response decoder first verifies membership; the schema then restores the declared
-atom for the selected choice. String choices remain strings, and probabilities
-retain string keys, even when the selected choice is an atom.
+A reached expression constructs one question and performs one evaluation. There
+is no implicit batching, cache, task pool, or background queue. Each configured
+retry or fallback can add HTTP requests. Applications needing explicit batching
+use the direct API or `Jevex.Schema` rather than combining expression syntax and
+assuming a single request.
 
-Typespecs express atom unions precisely but use `String.t()` for string choices
-and `number()` for probabilities. Runtime checks handle constraints that these
-specs cannot express. Neither structs nor typespecs prevent a caller from manually
-constructing invalid values; constructors and validated evaluation functions are
-the supported boundaries.
+## Collections, laziness, and error flow
 
-## Evaluation policy
+Execution cost follows the surrounding Elixir construct:
 
-Confidence gates and fallbacks belong to `Jevex.evaluate`, above HTTP and response
-validation. They work for both dynamic questions and schemas. Transport retries
-handle retryable HTTP statuses; evaluation fallback can select another client or
-invoke an application callback after a transport/transient HTTP error or
-insufficient confidence. Authentication, validation, and malformed-response
-failures do not trigger error fallback.
+| Construct | Evaluation behavior |
+| --- | --- |
+| `Enum.map`, `Enum.filter`, `Enum.group_by`, `Enum.reduce` | One reached expression per visited element |
+| `Enum.sort_by` | One key expression per element; subsequent comparisons reuse keys |
+| `for` with a decision filter | Filter for each input, body only for matches |
+| `Stream.map` / `Stream.filter` | Deferred until consumption; `take` can stop traversal early |
+| `with` using `~>>` | Stops at the first nonmatching tagged result |
+| `Enum.reduce_while` using `~>>` | Caller explicitly chooses whether errors halt traversal |
+| Function-clause dispatch | Decision computed before matching; clauses make no implicit requests |
+| `Task.async_stream` | Explicitly bounded concurrent evaluations with separate task-exit handling |
 
-A `min_confidence` gate applies to Choice and Score answers. Missing confidence
-fails the gate. Noul answers use a separate `min_noul_certainty` gate based on
-`max(p, 1 - p)`; certainty is distinct from the probability of "yes". Fallback is
-one step, and its result must satisfy the configured gates. There is no recursive
-fallback chain. Only after evaluation and its policy succeed does the schema
-convert declared fields and choices.
+An error from `~>` raises and interrupts ordinary traversal unless caught.
+An error from `~>>` is data for the caller's `with`, `case`, or reducer.
+`{:ok, false}` is a successful tagged result, not an error and not a false value
+when used directly as an Elixir condition. Programmer errors outside the inference
+boundary are not turned into successful-looking decisions.
 
-## Runtime configuration
+Streams are not caches: enumerating one again reruns inference. A filtering stream
+may inspect many inputs to find a requested number of matches. Concurrent tasks
+may start extra work before an early consumer stops; concurrency changes scheduling,
+not the number of requested questions. Inference in a sorting comparator can run
+repeatedly, so use `sort_by` or precompute scores instead.
 
-Schemas are provider-independent. Backend and transport selection lives in
-`Jevex.Client`, allowing one schema to run against multiple providers without
-recompilation. `Client.new/1` merges application configuration and explicit options
-with backend defaults. Existing client structs do not change when application
-configuration changes; build a new client to pick up new configuration.
+## Runtime settings and provider separation
 
-Credentials supplied as `{:system, name}` or a zero-arity function are resolved on
-every request. The schema never reads or embeds a credential. Each request runs
-synchronously in the caller's process; there is no background request queue,
-schema process, or DSL-owned supervision tree.
+The default syntax client is constructed from `config :jevex, :client`.
+`config :jevex, :syntax` supplies global conversion and evaluation policy.
+`config :jevex, MyModule` overrides syntax options for that calling module.
+The syntax merge is shallow: a module's `client` entry replaces the entire global
+syntax `client` value. A keyword client is subsequently processed by
+`Jevex.Client.new/1` with its own application-default and provider-default rules.
 
-## Extending and testing
+Syntax configuration is read on every evaluated expression. Client structs are
+immutable snapshots; credential sources such as `{:system, name}` are resolved
+on each request. Switching providers clears inherited provider-specific keys,
+endpoints, model names, and account settings. The syntax macro never embeds a
+credential or selects a provider at compilation.
 
-A custom endpoint using the native protocol can use `backend: :custom` with an
-explicit full `endpoint` and `model`. A different protocol implements
-`Jevex.Backend`: `defaults/1`, `encode/3`, `headers/1`, `decode/1`, and
-`partial_metadata?/0`. It must preserve the meaning of missing metadata rather
-than manufacture confidence or token counts. The HTTP layer supplies bearer
-authentication, and the response layer supplies final semantic validation.
+## Confidence and recovery
 
-For isolated tests, implement `Jevex.Transport` and pass `transport: MyTransport`.
-The transport receives encoded JSON plus client settings, and returns raw JSON
-with status and headers. This exercises the real encoder, decoder, and schema
-without external services. `examples/triage.exs` demonstrates this approach.
+`truth_threshold` is a scalar conversion setting, not an inference confidence
+gate. A string-form noul becomes true when `p >= truth_threshold`; raw noul
+preserves `p` regardless of that threshold. The separate `min_noul_certainty`
+gate checks `max(p, 1 - p)` for both forms. Choice and Score use the
+`min_confidence` gate; absent confidence fails an explicit gate. These rules apply
+identically to the scalar and tagged operators.
 
-Tests cover compile-time schema failures, response shape and probability checks,
-backend transformations, error handling, and the injected HTTP boundary. Live
-service compatibility additionally requires authenticated requests; passing
-fixture tests alone does not establish it. See the backend and reliability guides
-for protocol-specific caveats and request limits.
+Policy runs after response decoding and before scalar or schema conversion.
+Transport retries handle eligible HTTP responses. Error fallback handles
+transport failures and transient HTTP status failures; authentication, validation,
+and malformed-response errors do not trigger it. Low-confidence fallback applies
+to otherwise valid responses that miss a configured threshold.
+
+Only one fallback is permitted. Backup responses and callback responses undergo
+validation and the same confidence gates. An insufficient or failed backup ends
+the operation rather than invoking another fallback. Syntax configuration can
+expand backend atoms or client keyword lists into clients; the lower-level
+policy accepts client structs or callbacks returning typed direct-API responses.
+
+## Advanced batch schemas
+
+`use Jevex.Schema` imports literal declarations and generates a required-field
+struct, a `t/0` type, `questions/0`, and tagged/bang evaluation functions.
+Unlike the operator's dynamic operands, schema declarations are literal-only.
+Invalid or duplicate fields, colliding keys, and invalid rubrics fail compilation.
+
+Schema choice atoms use a closed lookup table. Selected values are restored only
+after native response validation; probability maps retain string keys. Schema
+results contain typed answer metadata, while full model and usage metadata remain
+available through `Jevex.evaluate(client, state, Schema.questions())`.
+
+Typespecs can express declared atom unions but not individual string values or
+probability bounds. Runtime validation covers those constraints. Structs can
+still be constructed manually with invalid values; supported constructors and
+evaluation functions are the validation boundaries. Neither static analysis nor
+response validation establishes that a model's judgment is correct.
+
+## Extension and verification
+
+Use `backend: :custom` with an explicit endpoint and model for the native
+protocol. A different protocol implements `Jevex.Backend`: `defaults/1`,
+`encode/3`, `headers/1`, `decode/1`, and `partial_metadata?/0`. Missing metadata
+must remain missing instead of being invented. The common HTTP layer owns bearer
+authentication, retries, and limits; the response layer owns validation.
+
+Tests inject `Jevex.Transport` to exercise actual JSON encoding, response decoding,
+confidence policy, and scalar/schema conversion without external services.
+`examples/syntax.exs` demonstrates Noul, Choice, and Score through pipelines,
+captures, comprehensions, lazy streams, reducers, clauses, branching, tagged
+`with`, and bounded tasks. Its live mode intentionally uses a compact four-question
+assessment. `examples/triage.exs` demonstrates the advanced batch path. Fixtures and doctests
+establish local behavior, while live provider compatibility additionally requires
+authenticated requests. See [reliability](reliability.md) and
+[backend contracts](backend-contracts.md) for operational boundaries.

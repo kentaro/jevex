@@ -1,8 +1,51 @@
 defmodule Jevex do
   @moduledoc """
-  Typed Jev evaluations with interchangeable backends and an optional schema DSL.
+  Jev decisions as Elixir expressions, with a separate typed request API.
 
-  For reusable declarations, see `Jevex.Schema`. For dynamic questions:
+  `use Jevex` imports two operators. `~>` returns a scalar and raises
+  `Jevex.Error` on evaluation failure; `~>>` returns `{:ok, value}` or
+  `{:error, error}` for `with` chains and explicit recovery.
+
+  Jev's three kinds fit ordinary Elixir data transformations: Noul supplies a
+  probability (or a boolean), Choice supplies a declared key, and Score supplies
+  a fractional number on an ordered rubric.
+
+      defmodule Tickets do
+        use Jevex
+
+        def group(tickets) do
+          tickets
+          |> Enum.filter(&(&1 ~> "Does this require attention?"))
+          |> Enum.group_by(&(&1 ~> {"Which team?", billing: "Invoices", support: "Bugs"}))
+        end
+
+        def risk(ticket), do: ticket ~> {:noul, "Will this affect customers?"}
+
+        def severity(ticket), do: ticket ~> {"How severe?", ["Low", "Medium", "High"]}
+
+        def assess(ticket) do
+          with {:ok, risk} <- ticket ~>> {:noul, "Will this affect customers?"},
+               {:ok, severity} <- ticket ~>> {"How severe?", ["Low", "Medium", "High"]} do
+            {:ok, %{risk: risk, severity: severity}}
+          end
+        end
+      end
+
+  Compose these values with pipelines, captures, comprehensions, `Enum`, `Stream`,
+  function clauses, and ordinary conditionals. Each reached operator makes one
+  evaluation; retries and fallback can add HTTP requests. Lazy streams defer
+  requests until consumption. Compute values before matching them in a function
+  head or guard: inference itself is not permitted there or in module bodies.
+
+  Start with the official TypeSafe API through `config :jevex, :client`.
+  Routers such as Lolipop use the same expressions with runtime configuration.
+  `Jevex.Syntax` documents both operators, all expression forms, confidence gates,
+  and fallback. The decision syntax guide gives complete composition examples.
+
+  ## Lower-level API
+
+  For batching and complete probability metadata, use `Jevex.Schema` or construct
+  questions directly:
 
       client = Jevex.Client.new!(backend: :typesafe)
       questions = %{urgent: Jevex.Question.noul!("Does this need immediate action?")}
@@ -42,6 +85,29 @@ defmodule Jevex do
       :low_confidence
   """
   alias Jevex.{Client, Error, Fallback, HTTP, Response}
+
+  @doc """
+  Imports Jev's decision operators into the calling module.
+
+  Write `use Jevex` in an ordinary Elixir module, then use `state ~> question`
+  or `state ~>> question` in its functions. No client is constructed and no request is made by `use`.
+  This macro accepts no options: configure `:jevex, :client` and
+  `:jevex, :syntax` at runtime, or set syntax options under the caller's module.
+  For IEx, `import Jevex.Syntax, only: [~>: 2, ~>>: 2]` imports the same operators.
+  """
+  @spec __using__(Macro.t()) :: Macro.t()
+  defmacro __using__(opts) do
+    if opts != [] do
+      raise CompileError,
+        file: __CALLER__.file,
+        line: __CALLER__.line,
+        description: "use Jevex accepts no options; configure the client and syntax at runtime"
+    end
+
+    quote do
+      import Jevex.Syntax, only: [~>: 2, ~>>: 2]
+    end
+  end
 
   @doc """
   Evaluates questions, validating every answer and optional confidence policy.

@@ -24,7 +24,12 @@ defmodule Jevex.Backends.Native do
 end
 
 defmodule Jevex.Backends.TypeSafe do
-  @moduledoc "Direct TypeSafe System One API. Uses `jev-latest` and the native question protocol."
+  @moduledoc """
+  The official TypeSafe System One API, selected by default for Jevex syntax.
+
+  Uses `jev-latest` and the native question protocol. Configure credentials on
+  `Jevex.Client`; expressions and typed batches share this adapter.
+  """
   @behaviour Jevex.Backend
   @impl true
   @doc """
@@ -73,6 +78,9 @@ end
 defmodule Jevex.Backends.Lolipop do
   @moduledoc """
   Lolipop AI Gateway's native `/v1/systemone` API.
+
+  Select `backend: :lolipop` in runtime client configuration to use the same
+  decision expressions through Lolipop instead of the official TypeSafe API.
 
   Defaults to `typesafe/jev-latest`. An explicit `model: "auto"` asks the gateway
   to choose an available probabilistic-decision model.
@@ -126,7 +134,10 @@ end
 
 defmodule Jevex.Backends.OpenRouter do
   @moduledoc """
-  OpenRouter's alpha Decisions endpoint, which is separate from Chat Completions.
+  OpenRouter's alpha Decisions endpoint, selected with `backend: :openrouter`.
+
+  Syntax and typed evaluation share this adapter. It uses the dedicated
+  Decisions protocol, separate from Chat Completions.
 
   Uses the pinned `typesafe/jev-1.13` model. This alpha contract permits omitted
   answer metadata; Jevex preserves absent confidence and probabilities as nil.
@@ -180,6 +191,9 @@ end
 defmodule Jevex.Backends.Cloudflare do
   @moduledoc """
   Cloudflare Workers AI REST `/ai/run` adapter for `typesafe/jev`.
+
+  Select `backend: :cloudflare` on the runtime client used by syntax or an
+  explicit evaluation; decision expressions do not need provider-specific JSON.
 
   Supply `account_id: "your-account-id"`. Only ASCII letters, numbers, hyphens,
   and underscores are accepted, preventing account IDs from altering URL paths.
@@ -271,6 +285,9 @@ end
 defmodule Jevex.Backends.Vercel do
   @moduledoc """
   Vercel AI Gateway's experimental v4 evaluation-model protocol.
+
+  Select `backend: :vercel` to use the same syntax or typed questions through
+  Vercel; this adapter handles its distinct question and response representation.
 
   Model selection uses `ai-model-id`; the JSON body contains state and questions.
   Native `noul` questions become `boolean`, and boolean answer probabilities are
@@ -388,7 +405,12 @@ defmodule Jevex.Backends.Vercel do
 end
 
 defmodule Jevex.Backends.Custom do
-  @moduledoc "Native System One protocol with an explicitly configured endpoint and model."
+  @moduledoc """
+  Native System One protocol with an explicitly configured endpoint and model.
+
+  Use `backend: :custom` for a compatible proxy. Syntax and typed evaluation
+  remain unchanged; an arbitrary Chat Completions router is not compatible.
+  """
   @behaviour Jevex.Backend
   @impl true
   @doc """

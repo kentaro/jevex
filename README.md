@@ -1,281 +1,253 @@
 # Jevex
 
-Jevex is an Elixir client for Jev probabilistic evaluations, with an optional
-macro DSL for reusable, typed schemas. It keeps HTTP requests, backend protocols,
-response validation, and schema syntax separate.
+Jev inference that composes with ordinary Elixir. `use Jevex` adds two operators:
+`~>` returns a decision value, and `~>>` returns a tagged result for `with`, `case`,
+and explicit recovery. Noul, Choice, and Score work in pipelines, captures,
+comprehensions, streams, and function-clause dispatch. No schema is required.
 
-Start with the official Jev API from TypeSafe. The same schemas also work through
-AI routers by changing the client configuration; see [Routers](#routers).
+```elixir
+defmodule Tickets do
+  use Jevex
 
-## Installation
+  def queues(tickets) do
+    tickets
+    |> Enum.filter(&(&1 ~> "Does this need attention?"))
+    |> Enum.group_by(&(&1 ~> {"Which team?", billing: "Payments", support: "Technical"}))
+  end
 
-Requires Elixir 1.17 or later and an OTP version supported by your Elixir release.
-This project has **not been published to Hex**. Add the delivered source as a path
-dependency in your application's `mix.exs`:
+  def most_severe_first(tickets) do
+    Enum.sort_by(tickets, &(&1 ~> {"How severe?", ["Low", "Medium", "High"]}), :desc)
+  end
+
+  def urgency_probabilities(tickets) do
+    Enum.map(tickets, fn ticket -> {ticket, ticket ~> {:noul, "Is this urgent?"}} end)
+  end
+
+  def route(ticket) do
+    team = ticket ~> {"Which team?", billing: "Payments", support: "Technical"}
+    dispatch(team, ticket)
+  end
+
+  defp dispatch(:billing, ticket), do: {:billing_queue, ticket}
+  defp dispatch(:support, ticket), do: {:support_queue, ticket}
+
+  def assess(ticket) do
+    with {:ok, probability} <- ticket ~>> {:noul, "Is this urgent?"},
+         {:ok, severity} <- ticket ~>> {"How severe?", ["Low", "Medium", "High"]} do
+      {:ok, %{urgency: probability, severity: severity}}
+    end
+  end
+end
+```
+
+Start with the official TypeSafe Jev API. Routers, including Lolipop AI Gateway,
+use the same expressions with different runtime configuration.
+
+## Installation and the official API
+
+Supports Elixir 1.17 through 1.20 with an OTP version supported by the selected
+Elixir release. Local verification uses Elixir 1.20.2 / OTP 29. CI is configured
+for Elixir 1.17 / OTP 27 and Elixir 1.20 / OTP 29; those remote CI jobs have not
+been run as part of this delivery.
+
+Jevex is packaged for Hex as `:jevex`. **Version 0.1.0 has not yet been published**;
+the registry dependency below is the installation form to use after publication,
+not a claim that `mix deps.get` can fetch this unreleased version today:
 
 ```elixir
 defp deps do
-  [
-    {:jevex, path: "../jevex"}
-  ]
+  [{:jevex, "~> 0.1.0"}]
 end
 ```
 
-Adjust the path to the actual checkout, then run `mix deps.get`.
-
-## Quick start: official Jev API
-
-Declare questions in a module. Schema declarations contain no credentials or
-backend settings, so the same schema works with different clients.
+For local development before publication, use the source checkout instead:
 
 ```elixir
-defmodule MyApp.Triage do
-  use Jevex.Schema
-
-  noul :urgent, "Does this ticket require immediate action?"
-
-  choice :department, "Which team should handle this ticket?", %{
-    billing: "Invoices, charges, and payments",
-    support: "Technical problems and outages"
-  }
-
-  score :severity, "How severe is the problem?", [
-    "Minor inconvenience",
-    "Important functionality impaired",
-    "Service unavailable"
-  ]
+defp deps do
+  [{:jevex, path: "../jevex"}]
 end
 ```
 
-Provide your TypeSafe API key as `TYPESAFE_API_KEY` in the process environment,
-then evaluate against the official Jev API:
+Adjust the local path and run `mix deps.get`. See [publishing](guides/publishing.md)
+for the Hex package and release workflow.
 
-```elixir
-with {:ok, client} <- Jevex.Client.new(backend: :typesafe),
-     {:ok, result} <- MyApp.Triage.evaluate(client, %{
-       subject: "Checkout is down",
-       body: "Nobody can complete a purchase."
-     }) do
-  case result do
-    %MyApp.Triage{
-      urgent: %Jevex.Answer.Noul{noul: probability},
-      department: %Jevex.Answer.Choice{choice: :support}
-    } when probability >= 0.8 ->
-      {:escalate, result.severity.score}
-
-    %MyApp.Triage{department: %Jevex.Answer.Choice{choice: team}} ->
-      {:route, team}
-  end
-else
-  {:error, %Jevex.Error{kind: kind, message: message}} ->
-    {:evaluation_failed, kind, message}
-end
-```
-
-A noul is a **yes probability between 0 and 1**, not a boolean. A score is numeric,
-within `0..(number_of_levels - 1)`; three levels mean scores between 0 and 2,
-including fractional scores. The schema result contains answer structs, not
-unwrapped scalars. Confidence and probability distributions may be `nil` on
-protocols that omit them; do not infer confidence from missing metadata.
-
-Schema choice keys declared as atoms become declared atoms in `answer.choice`.
-String choices stay strings. `answer.probabilities` always retains string keys:
-
-```elixir
-# For a schema choice declared as %{billing: "...", support: "..."}:
-# result.department.choice          => :billing
-# result.department.probabilities   => %{"billing" => 0.8, "support" => 0.2}
-```
-
-`MyApp.Triage.evaluate!/2` returns the schema struct or raises `Jevex.Error`.
-`MyApp.Triage.questions/0` exposes the validated question map for direct requests.
-
-## Direct API: dynamic questions and full metadata
-
-The macro layer is optional. Use constructors and the client directly when
-questions are assembled at runtime or when you need model and token usage data:
-
-```elixir
-questions = %{
-  "urgent" => Jevex.Question.noul!("Is immediate action needed?"),
-  "team" => Jevex.Question.choice!("Responsible team?", %{
-    "billing" => "Invoices and payments",
-    "support" => "Technical issues"
-  })
-}
-
-client = Jevex.Client.new!(backend: :typesafe)
-
-case Jevex.evaluate(client, "My invoice was charged twice", questions) do
-  {:ok, %Jevex.Response{answers: answers, model: model, usage: usage}} ->
-    {answers["team"].choice, model, usage}
-
-  {:error, %Jevex.Error{} = error} ->
-    {:error, error}
-end
-```
-
-Direct answer IDs and choice values remain strings; atom conversion is only a
-schema convenience. `Jevex.evaluate!/3` raises on failure. Question constructors
-also have non-bang variants, such as `Jevex.Question.choice/2`, returning tagged
-results. Instructions and rubric entries support JSON strings, objects, arrays,
-and `nil`; state must be a string, JSON object, or array that Jason can encode.
-Top-level state structs and scalar numbers/booleans are rejected.
-
-For lower-level integration, `Jevex.HTTP.post/3` handles the request and backend
-normalization but does **not** decode typed answers. Normally use
-`Jevex.evaluate/3`, which adds `Jevex.Response` validation.
-
-## Routers
-
-Jevex also supports Lolipop AI Gateway, OpenRouter, Cloudflare Workers AI,
-and Vercel AI Gateway, as well as custom native endpoints. Switch the client;
-the schema and result types stay the same.
-
-For example, to use **Lolipop AI Gateway**, provide its key as
-`LOLIPOP_AI_GATEWAY_API_KEY` and select `backend: :lolipop`:
-
-```elixir
-client = Jevex.Client.new!(
-  backend: :lolipop,
-  api_key: {:system, "LOLIPOP_AI_GATEWAY_API_KEY"}
-)
-
-MyApp.Triage.evaluate(client, %{
-  subject: "Checkout is down",
-  body: "Nobody can complete a purchase."
-})
-```
-
-The same schema works with both the official API and the router. The client
-selects the endpoint, credentials, and wire protocol at runtime.
-
-Each adapter uses the service's dedicated evaluation protocol. See the
-[backend guide](guides/backends.md) for credentials and configuration, and
-[backend contracts](guides/backend-contracts.md) for endpoint differences and
-alpha/experimental protocol limitations.
-
-## Fallbacks and confidence gates
-
-Evaluation options are per call. They are independent of transport retries and
-work with both schemas and `Jevex.evaluate/4`:
-
-```elixir
-primary = Jevex.Client.new!(
-  backend: :typesafe,
-  api_key: {:system, "TYPESAFE_API_KEY"}
-)
-
-backup = Jevex.Client.new!(
-  backend: :lolipop,
-  api_key: {:system, "LOLIPOP_AI_GATEWAY_API_KEY"}
-)
-
-MyApp.Triage.evaluate(primary, "Checkout is down",
-  on_error: backup,
-  on_low_confidence: backup,
-  min_confidence: 0.8,
-  min_noul_certainty: 0.9
-)
-```
-
-`on_error` applies to transport failures and HTTP 429, 529, or 5xx after the
-primary client exhausts its retries. Authentication, validation, and malformed
-response errors do not trigger it. `on_low_confidence` applies
-when an otherwise valid result misses a configured gate. `min_confidence` checks
-Choice and Score confidence (0..1); missing confidence fails a configured gate.
-`min_noul_certainty` checks `max(p, 1 - p)` for noul answers and accepts thresholds
-between 0.5 and 1. A strong "no" is therefore certain even though its yes
-probability is low. Without a configured gate, valid probabilities are returned
-without this application-level filtering.
-
-`on_low_confidence` requires at least one confidence threshold.
-
-Fallbacks do not recursively trigger further fallbacks. The backup must satisfy
-the same confidence gates; an insufficient backup result returns a
-`:low_confidence` error. A fallback can also be a one-argument callback:
-
-```elixir
-MyApp.Triage.evaluate(primary, "Checkout is down",
-  on_error: fn %{state: state, questions: questions} ->
-    Jevex.evaluate(backup, state, questions)
-  end
-)
-```
-
-The callback receives a map containing `reason` (`:error` or `:low_confidence`),
-`error`, `response`, `state`, `questions`, and the primary `client`. `error` is
-present for an error; `response` contains the validated result for low confidence.
-It must return `{:ok, %Jevex.Response{}}` or `{:error, %Jevex.Error{}}`, including
-when called through a schema. Return direct-API answers with string IDs and choice
-values, not a schema struct. Successful callback responses are validated again
-and must satisfy the configured gates. Callbacks execute in the caller's process;
-they should implement an explicit recovery policy.
-
-## Configuration
-
-Application-wide defaults can be supplied in `config/runtime.exs`:
+Set `TYPESAFE_API_KEY` in the process environment and configure `config/runtime.exs`:
 
 ```elixir
 import Config
 
 config :jevex, :client,
   backend: :typesafe,
-  api_key: {:system, "TYPESAFE_API_KEY"},
-  timeout: 30_000,
-  connect_timeout: 5_000,
-  max_retries: 2
+  api_key: {:system, "TYPESAFE_API_KEY"}
 ```
 
-Construct an immutable client from those defaults, or override individual options:
+Call your ordinary functions, such as `Tickets.queues(tickets)` or
+`Tickets.assess(ticket)`. Client configuration is read at runtime; no inference
+occurs when compiling a module or importing the operators.
+
+## Noul, Choice, and Score
+
+| Question expression | `~>` returns | `~>>` returns on success |
+| --- | --- | --- |
+| `"Does this need attention?"` | Boolean, using `truth_threshold` | `{:ok, boolean}` |
+| `{:noul, "Is this urgent?"}` | Raw yes probability in 0..1 | `{:ok, probability}` |
+| `{"Which team?", billing: "Payments", support: "Technical"}` | Declared atom, such as `:billing` | `{:ok, :billing}` |
+| `{"Which language?", %{"en" => "English", "fr" => "French"}}` | Declared string, such as `"en"` | `{:ok, "en"}` |
+| `{"How severe?", ["Low", "Medium", "High"]}` | Number in 0..2, possibly fractional | `{:ok, score}` |
+
+The string form converts the underlying noul probability with
+`p >= truth_threshold` (default 0.5). `{:noul, question}` preserves the probability
+and ignores that conversion threshold; configured certainty gates still apply.
+Scores span zero through the final rubric index, not a universal 0..1 scale.
+
+`~>` raises `Jevex.Error` on evaluation failure. `~>>` returns
+`{:error, %Jevex.Error{}}`. An inference failure never becomes a successful-looking
+`false`, zero, or arbitrary choice.
+
+## Ordinary control flow and explicit request counts
+
+`if` and `case` work alongside the collection examples above:
 
 ```elixir
-client = Jevex.Client.new!()
-short_timeout_client = Jevex.Client.new!(timeout: 5_000, max_retries: 0)
+defmodule Attention do
+  use Jevex
 
-# Switching backends selects that provider's defaults, including its key variable.
-other_client = Jevex.Client.new!(
-  backend: :openrouter,
-  api_key: {:system, "OPENROUTER_API_KEY"}
-)
+  def action(ticket) do
+    if ticket ~> "Does this need attention?" do
+      case ticket ~> {"Which team?", billing: "Payments", support: "Technical"} do
+        :billing -> :billing_queue
+        :support -> :support_queue
+      end
+    else
+      :no_action
+    end
+  end
+end
 ```
 
-Explicit options override application defaults, which override backend defaults.
-Changing `backend` clears inherited provider-specific key, endpoint, model and
-account settings, so a default provider's credential is not sent to another one.
-An environment credential is read on every request; a missing key is reported
-when requesting, not when constructing the client. Literal strings and zero-arity
-credential functions are also supported. Avoid putting secrets in source code.
+Each reached operator expression performs one single-question evaluation. Retries
+and fallback may add HTTP requests. Both operands are evaluated exactly once;
+ordinary branching and short-circuiting decide which expressions are reached.
+There is no implicit batching, caching, or parallelism.
 
-Useful runtime limits include `max_request_bytes` (default 1 MiB),
-`max_response_bytes` (4 MiB), and `max_retry_delay` (30,000 ms). Timeouts apply per
-attempt; retries can extend total elapsed time. See [reliability](guides/reliability.md).
+For `n` tickets, `Tickets.queues/1` evaluates `n` boolean questions plus one choice
+for each retained ticket. `Enum.sort_by/3` evaluates each score once per element;
+avoid inference inside a sorting comparator, which runs repeatedly. Streams defer
+requests until consumed, and bounded concurrency must be requested explicitly.
+The [syntax guide](guides/syntax.md) covers `for`, `Stream`, `reduce`, `cond`,
+`with`, function clauses, and `Task.async_stream/3` with their evaluation costs.
 
-## Type guarantees and boundaries
+## Routers
 
-- Invalid schema declarations fail compilation: empty schemas, duplicate or
-  reserved fields, invalid rubrics, colliding choice keys, and nonliteral inputs.
-- Generated structs require all fields and have a `t/0` typespec. Atom choices
-  produce types such as `Jevex.Answer.Choice.t(:billing | :support)`.
-- Elixir remains dynamically typed. Typespecs support tools such as Dialyzer;
-  they do not prevent arbitrary caller code from constructing invalid structs.
-- Individual string literals and probability bounds cannot be expressed by
-  these typespecs. Runtime validation enforces choice membership, answer types,
-  required coverage, numeric bounds, and supplied probability distributions.
-- Schema decoding never creates atoms from external strings. It uses only
-  choice atoms already present in the declaration.
-- Response validation guarantees protocol conformance, not the truth, accuracy,
-  calibration, or suitability of a model's judgment.
+Jevex supports Lolipop AI Gateway, OpenRouter, Cloudflare Workers AI, Vercel AI
+Gateway, and custom native endpoints. For **Lolipop AI Gateway**, provide
+`LOLIPOP_AI_GATEWAY_API_KEY` and replace the client configuration:
 
-## Running the example and checks
+```elixir
+config :jevex, :client,
+  backend: :lolipop,
+  api_key: {:system, "LOLIPOP_AI_GATEWAY_API_KEY"}
+```
 
-From this project's directory:
+The expression code stays the same. Adapters use each provider's evaluation
+protocol rather than generic Chat Completions. See [backend configuration](guides/backends.md)
+and [protocol contracts](guides/backend-contracts.md) for endpoints, models,
+authentication, and alpha/experimental limitations.
+
+## Confidence and fallback
+
+Keep syntax policy separate from connection settings:
+
+```elixir
+config :jevex, :syntax,
+  truth_threshold: 0.5,
+  min_confidence: 0.8,
+  min_noul_certainty: 0.9,
+  on_error: :lolipop,
+  on_low_confidence: :lolipop
+
+config :jevex, Tickets,
+  truth_threshold: 0.7,
+  min_noul_certainty: 0.95
+```
+
+Module settings override global syntax options. A module may also set
+`client: [backend: :lolipop]`. The backup can be a backend atom, client keyword
+options, a `Jevex.Client`, or a callback returning a typed direct-API response.
+
+- `truth_threshold` converts an accepted noul probability to a boolean. It does
+  not affect raw-probability output or establish certainty.
+- `min_noul_certainty` checks `max(p, 1 - p)` for both noul forms. A confident "no"
+  is as certain as a confident "yes"; the threshold must be in 0.5..1.
+- `min_confidence` checks Choice/Score metadata in 0..1. Missing confidence fails
+  an explicit gate.
+- `on_error` handles transport failures and HTTP 429, 529, or 5xx after primary
+  retries. It does not handle authentication, validation, or malformed responses.
+- `on_low_confidence` requires a configured gate. The backup must pass the same
+  gates; a failed or insufficient backup ends evaluation without a fallback loop.
+
+Both operators apply the same policy before returning a value or error. See
+[syntax configuration](guides/syntax.md#configuration) for precedence and callbacks.
+
+## Advanced: batching and full metadata
+
+For several questions in one request, or access to full probabilities, confidence,
+model, and usage, use the independent direct API:
+
+```elixir
+client = Jevex.Client.new!(backend: :typesafe)
+questions = %{
+  "urgent" => Jevex.Question.noul!("Is this urgent?"),
+  "team" => Jevex.Question.choice!("Which team?", %{
+    "billing" => "Payments", "support" => "Technical"
+  })
+}
+
+with {:ok, %Jevex.Response{answers: answers, model: model, usage: usage}} <-
+       Jevex.evaluate(client, "My invoice was charged twice", questions) do
+  {answers["urgent"].noul, answers["team"].choice, model, usage}
+end
+```
+
+`Jevex.evaluate/4` accepts per-call confidence and fallback options; its fallback
+actions are a client struct or callback. Syntax also accepts backend atoms and
+client keyword lists. `Jevex.HTTP.post/3` exposes the request layer independently,
+returning normalized JSON without typed answer decoding.
+
+`Jevex.Schema` is optional for reusable typed batches:
+
+```elixir
+defmodule TicketBatch do
+  use Jevex.Schema
+  noul :urgent, "Is this urgent?"
+  choice :team, "Which team?", %{billing: "Payments", support: "Technical"}
+end
+
+# {:ok, result} = TicketBatch.evaluate(client, ticket)
+# {:ok, full_response} = Jevex.evaluate(client, ticket, TicketBatch.questions())
+```
+
+Schema fields retain typed answers. Selected atom choices are restored, while
+probability maps keep string keys. Direct-API choice values are strings. Supported
+routers may omit model, usage, confidence, or distributions; absence is preserved,
+not fabricated as zero.
+
+## Guarantees, examples, and checks
+
+The independent request/response layers validate inputs, answer coverage, types,
+choice membership, bounds, and distributions. Syntax then extracts a scalar.
+Response strings never create atoms. Static literals receive compile-time checks;
+dynamic operands receive runtime checks. Inference in guards, match patterns, or
+module bodies is rejected. Elixir remains dynamically typed: typespecs aid static
+analysis, and runtime validation enforces bounds and membership. Neither guarantees
+the truth or calibration of a model's judgment.
 
 ```sh
 mix deps.get
-mix run examples/triage.exs          # Deterministic fixture; no API key or network
-mix run examples/triage.exs --live   # Official Jev API; requires TYPESAFE_API_KEY
-mix run examples/triage.exs --live --lolipop # Router example; requires LOLIPOP_AI_GATEWAY_API_KEY
+mix run examples/syntax.exs                  # Diverse offline examples; no network
+mix run examples/syntax.exs --live           # Four TypeSafe evaluations
+mix run examples/syntax.exs --live --lolipop # Four Lolipop evaluations
+mix run examples/triage.exs                  # Advanced offline schema/batch example
 mix test
 mix format --check-formatted
 mix compile --warnings-as-errors
@@ -283,16 +255,12 @@ mix docs --warnings-as-errors
 mix dialyzer
 ```
 
-The offline example validates the same client, request, decoder, and schema path
-using an injected transport. It is not evidence of a successful live service call.
-
-`mix test` also runs the executable `iex>` examples in the module and function
-documentation as doctests. These examples require no API keys or network access.
-An additional check requires English documentation for every authored module,
-exported function, macro, and callback.
-
-Read the [architecture guide](guides/architecture.md), [backend guide](guides/backends.md),
-and [reliability guide](guides/reliability.md) for the full contracts.
+Live syntax mode runs a compact four-expression assessment instead of the full
+offline collection tour. Fixture tests and doctests exercise local behavior without
+API keys; they do not establish live provider compatibility. Documentation checks
+cover authored modules, exported functions, macros, and callbacks. Read
+[architecture](guides/architecture.md) and [reliability](guides/reliability.md) for
+layer boundaries, limits, and retry behavior.
 
 ## License
 

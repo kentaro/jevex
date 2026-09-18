@@ -1,6 +1,10 @@
 defmodule Jevex.Question do
   @moduledoc """
-  A validated native Jev question, independent of transport and the macro DSL.
+  A validated native Jev question for explicit, typed evaluation.
+
+  Use `Jevex.Syntax` for concise decisions inside ordinary Elixir code. Construct
+  questions here when you need structured instructions, dynamic rubrics, or
+  several judgments in one `Jevex.evaluate/4` request.
 
   Instructions and rubric entries accept strings, JSON objects, arrays, or `nil`.
   Nested JSON values may also be numbers and booleans. Atom object keys are
@@ -161,6 +165,8 @@ defmodule Jevex.Question do
     encoded = %{"type" => Atom.to_string(q.type), "instructions" => q.instructions}
     if is_nil(q.criteria), do: encoded, else: Map.put(encoded, "criteria", q.criteria)
   end
+
+  def encode(_), do: raise(Error, kind: :validation, message: "expected a Jevex.Question")
 
   defp build(type, instructions, criteria) when type in [:noul, :choice, :score] do
     with {:ok, instructions} <- entry(instructions),

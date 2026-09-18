@@ -5,25 +5,33 @@ defmodule Jevex.MixProject do
     [
       app: :jevex,
       version: "0.1.0",
+      name: "Jevex",
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
-      description: "Typed Jev decisions with a validated Elixir DSL and configurable backends",
+      description:
+        "Jev decisions as Elixir expressions, with typed requests and configurable backends",
       deps: deps(),
       docs: [
         main: "readme",
         extras: [
           "README.md",
+          "guides/syntax.md",
           "guides/backends.md",
           "guides/backend-contracts.md",
           "guides/architecture.md",
           "guides/reliability.md",
+          "guides/publishing.md",
+          "CHANGELOG.md",
           "VALIDATION.md"
         ]
       ],
       package: [
+        name: "jevex",
+        build_tools: ["mix"],
         licenses: ["MIT"],
         links: %{"Jev API specification" => "https://docs.typesafe.ai/api"},
-        files: ~w(lib mix.exs README.md LICENSE CHANGELOG.md VALIDATION.md guides)
+        files:
+          ~w(lib .formatter.exs mix.exs README.md LICENSE CHANGELOG.md VALIDATION.md guides examples)
       ],
       dialyzer: [plt_add_apps: [:mix]],
       test_coverage: [summary: [threshold: 85]]
